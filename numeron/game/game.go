@@ -18,6 +18,21 @@ type Session struct {
 	Turn          int       `json:"turn"`
 	Status        string    `json:"status"` // "playing", "player_win", "cpu_win", "draw"
 	Logs          []TurnLog `json:"logs"`
+	// 試合終了時のみクライアントに開示する数字 (omitempty なのでプレイ中は出ない)
+	RevealedCpu string `json:"revealed_cpu,omitempty"`
+	RevealedYou string `json:"revealed_you,omitempty"`
+}
+
+// FormatSecret は数字スライスを"123"形式の文字列に変換します
+func FormatSecret(s []int) string {
+	if len(s) == 0 {
+		return ""
+	}
+	buf := make([]byte, 0, len(s))
+	for _, d := range s {
+		buf = append(buf, byte('0'+d))
+	}
+	return string(buf)
 }
 
 type TurnLog struct {

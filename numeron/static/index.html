@@ -1,102 +1,1098 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <title>Web Numeron</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0a0612">
+    <title>NUMER0N — 数字決闘</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Orbitron:wght@500;700;900&family=Noto+Sans+JP:wght@300;500;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; background: #f4f4f9; display: flex; justify-content: center; padding: 20px; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
-        h1 { text-align: center; color: #333; }
-        .box { margin-bottom: 15px; padding: 15px; background: #eef; border-radius: 5px; }
-        input { padding: 10px; font-size: 16px; width: calc(100% - 22px); margin-bottom: 10px; box-sizing: border-box; }
-        button { padding: 10px; font-size: 16px; width: 100%; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
-        button:hover { background: #0056b3; }
-        .log-item { border-bottom: 1px solid #ccc; padding: 10px 0; }
-        #gameArea { display: none; }
-        .winner { color: red; font-weight: bold; font-size: 1.2em; text-align: center; margin-top: 10px; }
+        :root {
+            --bg-0: #050309;
+            --bg-1: #0d0618;
+            --bg-2: #1c082f;
+            --bg-panel: rgba(13, 6, 24, 0.78);
+            --bg-panel-solid: #0d0618;
+            --neon-magenta: #ff2cb4;
+            --neon-magenta-soft: rgba(255, 44, 180, 0.5);
+            --neon-purple: #9b1aff;
+            --neon-cyan: #22d3ee;
+            --gold-1: #fff5d0;
+            --gold-2: #f7e07a;
+            --gold-3: #d4af37;
+            --gold-4: #8a6a1c;
+            --text: #f8f3ff;
+            --text-dim: #b8a3d4;
+            --text-muted: #6b5887;
+            --led-on: #ff4ec8;
+            --led-off: rgba(255, 78, 200, 0.08);
+            --danger: #ff3b6e;
+            --border-soft: rgba(155, 26, 255, 0.28);
+            --border-strong: rgba(255, 44, 180, 0.55);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        html { -webkit-text-size-adjust: 100%; }
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(155, 26, 255, 0.35) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 50% 110%, rgba(255, 44, 180, 0.25) 0%, transparent 60%),
+                linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 35%, var(--bg-0) 100%);
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* スキャンライン */
+        body::before {
+            content: '';
+            position: fixed; inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(255, 255, 255, 0.025) 0,
+                rgba(255, 255, 255, 0.025) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+            pointer-events: none;
+            z-index: 1;
+            mix-blend-mode: overlay;
+        }
+        /* ビネット */
+        body::after {
+            content: '';
+            position: fixed; inset: 0;
+            background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.65) 100%);
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .stage {
+            position: relative;
+            z-index: 3;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 18px 80px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ============ 共通 ============ */
+        .screen { display: none; flex: 1; flex-direction: column; }
+        .screen.active { display: flex; animation: fadeIn 0.6s ease both; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+        .neon-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 18px 0;
+        }
+        .neon-divider::before,
+        .neon-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+        }
+        .neon-divider span {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.4em;
+            color: var(--neon-magenta);
+            text-shadow: 0 0 8px var(--neon-magenta-soft);
+        }
+
+        /* ============ タイトル画面 ============ */
+        #titleScreen {
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            gap: 36px;
+            padding: 40px 0;
+        }
+
+        .title-frame {
+            position: relative;
+            padding: 28px 40px;
+            display: inline-block;
+        }
+        .title-frame::before,
+        .title-frame::after {
+            content: '';
+            position: absolute;
+            width: 28px; height: 28px;
+            border: 2px solid var(--gold-3);
+            opacity: 0.7;
+        }
+        .title-frame::before { top: 0; left: 0; border-right: none; border-bottom: none; }
+        .title-frame::after { bottom: 0; right: 0; border-left: none; border-top: none; }
+
+        .title-mark {
+            font-family: 'Cinzel', serif;
+            font-weight: 900;
+            font-size: clamp(54px, 13vw, 92px);
+            line-height: 1;
+            letter-spacing: 0.02em;
+            background: linear-gradient(180deg,
+                var(--gold-1) 0%,
+                var(--gold-2) 22%,
+                var(--gold-3) 50%,
+                var(--gold-4) 65%,
+                var(--gold-3) 78%,
+                var(--gold-2) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            filter:
+                drop-shadow(0 1px 0 rgba(0,0,0,0.6))
+                drop-shadow(0 0 18px rgba(212, 175, 55, 0.35))
+                drop-shadow(0 8px 30px rgba(212, 175, 55, 0.2));
+        }
+        .title-mark .zero { display: inline-block; transform: scaleX(0.85); }
+
+        .title-sub {
+            margin-top: 12px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.6em;
+            color: var(--neon-magenta);
+            text-shadow: 0 0 12px var(--neon-magenta-soft);
+        }
+
+        .title-tag {
+            font-size: 13px;
+            color: var(--text-dim);
+            letter-spacing: 0.3em;
+        }
+
+        .start-btn {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.5em;
+            padding: 18px 44px;
+            background: transparent;
+            color: var(--neon-magenta);
+            border: 1px solid var(--neon-magenta);
+            cursor: pointer;
+            position: relative;
+            text-shadow: 0 0 8px var(--neon-magenta-soft);
+            box-shadow:
+                0 0 0 1px rgba(255, 44, 180, 0.2),
+                0 0 24px rgba(255, 44, 180, 0.25),
+                inset 0 0 16px rgba(255, 44, 180, 0.08);
+            transition: all 0.25s ease;
+            animation: pulseGlow 2.4s ease-in-out infinite;
+        }
+        .start-btn:hover {
+            background: var(--neon-magenta);
+            color: #fff;
+            box-shadow:
+                0 0 0 1px var(--neon-magenta),
+                0 0 32px var(--neon-magenta),
+                0 0 64px rgba(255, 44, 180, 0.4);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(255, 44, 180, 0.2), 0 0 18px rgba(255, 44, 180, 0.2), inset 0 0 12px rgba(255, 44, 180, 0.06); }
+            50% { box-shadow: 0 0 0 1px rgba(255, 44, 180, 0.4), 0 0 36px rgba(255, 44, 180, 0.4), inset 0 0 20px rgba(255, 44, 180, 0.12); }
+        }
+
+        .credit {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            letter-spacing: 0.3em;
+            color: var(--text-muted);
+            margin-top: 12px;
+        }
+
+        /* ============ セットアップ画面 ============ */
+        #setupScreen { justify-content: center; gap: 20px; padding: 30px 0; }
+
+        .setup-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-soft);
+            backdrop-filter: blur(8px);
+            padding: 28px 22px;
+            position: relative;
+        }
+        .setup-card::before {
+            content: '';
+            position: absolute;
+            top: -1px; left: -1px; right: -1px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--neon-magenta), transparent);
+        }
+
+        .setup-title {
+            font-family: 'Cinzel', serif;
+            font-size: 22px;
+            font-weight: 700;
+            text-align: center;
+            color: var(--gold-2);
+            margin-bottom: 6px;
+            letter-spacing: 0.1em;
+        }
+        .setup-desc {
+            font-size: 12px;
+            text-align: center;
+            color: var(--text-dim);
+            margin-bottom: 22px;
+            letter-spacing: 0.1em;
+        }
+
+        /* LED風 数字スロット */
+        .digit-slots {
+            display: flex;
+            justify-content: center;
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+        .digit-slot {
+            width: 64px; height: 88px;
+            background: #08030f;
+            border: 1px solid var(--border-soft);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 800;
+            font-size: 48px;
+            color: var(--led-on);
+            text-shadow:
+                0 0 6px var(--led-on),
+                0 0 16px var(--neon-magenta-soft),
+                0 0 32px rgba(255, 44, 180, 0.3);
+            box-shadow:
+                inset 0 0 14px rgba(0, 0, 0, 0.8),
+                inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .digit-slot::before {
+            content: '8';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--led-off);
+            text-shadow: none;
+            pointer-events: none;
+        }
+        .digit-slot.filled { border-color: var(--neon-magenta); }
+        .digit-slot.active {
+            border-color: var(--neon-cyan);
+            box-shadow:
+                inset 0 0 14px rgba(0, 0, 0, 0.8),
+                0 0 18px rgba(34, 211, 238, 0.5);
+        }
+        .digit-slot .digit-value { position: relative; z-index: 1; }
+        .digit-slot.filled .digit-value { animation: digitPop 0.25s ease; }
+        @keyframes digitPop {
+            0% { transform: scale(0.6); opacity: 0; }
+            70% { transform: scale(1.15); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .num-pad {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+        }
+        .num-key {
+            background: rgba(155, 26, 255, 0.08);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            padding: 14px 0;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .num-key:hover:not(:disabled) {
+            background: rgba(255, 44, 180, 0.18);
+            border-color: var(--neon-magenta);
+            color: var(--neon-magenta);
+            text-shadow: 0 0 10px var(--neon-magenta-soft);
+        }
+        .num-key:active:not(:disabled) { transform: scale(0.96); }
+        .num-key.action {
+            grid-column: span 2;
+            background: rgba(255, 44, 180, 0.1);
+            border-color: var(--border-strong);
+            color: var(--neon-magenta);
+            font-size: 13px;
+            letter-spacing: 0.2em;
+        }
+        .num-key.confirm {
+            grid-column: span 3;
+            background: linear-gradient(180deg, rgba(255, 44, 180, 0.25), rgba(155, 26, 255, 0.2));
+            border-color: var(--neon-magenta);
+            color: #fff;
+            font-size: 13px;
+            letter-spacing: 0.3em;
+            text-shadow: 0 0 8px var(--neon-magenta-soft);
+        }
+        .num-key.confirm:hover:not(:disabled) {
+            background: linear-gradient(180deg, var(--neon-magenta), var(--neon-purple));
+        }
+        .num-key:disabled {
+            opacity: 0.25;
+            cursor: not-allowed;
+        }
+
+        .hint-msg {
+            text-align: center;
+            font-size: 12px;
+            color: var(--danger);
+            min-height: 18px;
+            margin-top: 12px;
+            letter-spacing: 0.05em;
+        }
+
+        /* ============ バトル画面 ============ */
+        #battleScreen { gap: 12px; }
+        .battle-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 18px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-soft);
+            position: relative;
+        }
+        .battle-header::before {
+            content: '';
+            position: absolute;
+            top: -1px; left: 16px; width: 40px; height: 2px;
+            background: var(--neon-magenta);
+            box-shadow: 0 0 8px var(--neon-magenta);
+        }
+        .turn-meter { display: flex; align-items: baseline; gap: 8px; }
+        .turn-meter .label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.3em;
+            color: var(--text-dim);
+        }
+        .turn-meter .value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--neon-magenta);
+            text-shadow: 0 0 12px var(--neon-magenta-soft);
+            min-width: 48px;
+        }
+
+        .my-secret { text-align: right; }
+        .my-secret .label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            letter-spacing: 0.3em;
+            color: var(--text-muted);
+            display: block;
+        }
+        .my-secret .value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--gold-2);
+            letter-spacing: 0.2em;
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+        }
+
+        /* バトラー表示 */
+        .battlers {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+        .battler {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-soft);
+            padding: 12px;
+            text-align: center;
+            position: relative;
+        }
+        .battler.you { border-color: rgba(34, 211, 238, 0.4); }
+        .battler.cpu { border-color: var(--border-strong); }
+        .battler .role {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.4em;
+            margin-bottom: 4px;
+        }
+        .battler.you .role { color: var(--neon-cyan); text-shadow: 0 0 8px rgba(34, 211, 238, 0.4); }
+        .battler.cpu .role { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta-soft); }
+        .battler .name {
+            font-family: 'Cinzel', serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: 0.05em;
+        }
+        .vs-mark {
+            font-family: 'Cinzel', serif;
+            font-size: 22px;
+            font-weight: 900;
+            color: var(--gold-3);
+            text-shadow: 0 0 14px rgba(212, 175, 55, 0.4);
+            padding: 0 4px;
+        }
+
+        /* 履歴 */
+        .history-section {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-soft);
+            padding: 12px;
+        }
+        .history-empty {
+            text-align: center;
+            padding: 30px 10px;
+            color: var(--text-muted);
+            font-size: 12px;
+            letter-spacing: 0.1em;
+        }
+        .history-grid {
+            display: grid;
+            grid-template-columns: 32px 1fr 1fr;
+            gap: 4px;
+        }
+        .history-head { display: contents; }
+        .history-head > div {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            letter-spacing: 0.3em;
+            color: var(--text-muted);
+            text-align: center;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .history-head .col-you { color: var(--neon-cyan); }
+        .history-head .col-cpu { color: var(--neon-magenta); }
+
+        .turn-row { display: contents; }
+        .turn-row > div {
+            padding: 8px 4px;
+            background: rgba(255, 255, 255, 0.02);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .turn-row .turn-num {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            color: var(--text-muted);
+            background: transparent;
+        }
+        .guess-display {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 800;
+            font-size: 17px;
+            letter-spacing: 0.15em;
+            color: var(--text);
+        }
+        .turn-row.new-row > div:not(.turn-num) {
+            animation: rowEnter 0.5s ease both;
+        }
+        @keyframes rowEnter {
+            from { opacity: 0; background: rgba(255, 44, 180, 0.22); }
+            to { opacity: 1; }
+        }
+        .cell.you .guess-display { color: var(--neon-cyan); text-shadow: 0 0 8px rgba(34, 211, 238, 0.5); }
+        .cell.cpu .guess-display { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta-soft); }
+
+        .eb-tag {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 2px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 5px;
+            border: 1px solid;
+            border-radius: 2px;
+        }
+        .eb-tag.eat { color: var(--gold-2); border-color: rgba(247, 224, 122, 0.5); background: rgba(247, 224, 122, 0.08); }
+        .eb-tag.bite { color: var(--neon-cyan); border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.06); }
+        .eb-tag .num { font-size: 12px; }
+        .eb-tag.zero { opacity: 0.4; }
+
+        /* ============ 結果画面 ============ */
+        #resultOverlay {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center, rgba(13, 6, 24, 0.85), rgba(5, 3, 9, 0.97));
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        #resultOverlay.active { display: flex; animation: fadeIn 0.6s ease both; }
+        .result-card {
+            max-width: 480px;
+            width: 100%;
+            background: var(--bg-panel-solid);
+            border: 1px solid var(--border-strong);
+            padding: 36px 28px;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 0 80px rgba(255, 44, 180, 0.3);
+        }
+        .result-card::before, .result-card::after {
+            content: '';
+            position: absolute;
+            width: 24px; height: 24px;
+            border: 2px solid var(--gold-3);
+        }
+        .result-card::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+        .result-card::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+        .result-headline {
+            font-family: 'Cinzel', serif;
+            font-size: 36px;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            margin-bottom: 8px;
+        }
+        .result-headline.win {
+            background: linear-gradient(180deg, var(--gold-1), var(--gold-3));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            filter: drop-shadow(0 0 24px rgba(212, 175, 55, 0.5));
+        }
+        .result-headline.lose { color: var(--danger); text-shadow: 0 0 18px rgba(255, 59, 110, 0.6); }
+        .result-headline.draw { color: var(--text-dim); }
+
+        .result-sub {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.4em;
+            color: var(--text-dim);
+            margin-bottom: 24px;
+        }
+        .reveal-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            margin: 10px 0;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-soft);
+        }
+        .reveal-row .label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.3em;
+            color: var(--text-dim);
+        }
+        .reveal-row .value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: 0.2em;
+            color: var(--neon-magenta);
+            text-shadow: 0 0 12px var(--neon-magenta-soft);
+        }
+        .reveal-row .value.gold {
+            color: var(--gold-2);
+            text-shadow: 0 0 12px rgba(247, 224, 122, 0.4);
+        }
+        .result-stats {
+            margin: 20px 0 24px;
+            font-size: 13px;
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+        }
+        .result-stats strong {
+            color: var(--gold-2);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            font-size: 18px;
+            margin: 0 4px;
+        }
+        .restart-btn {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.4em;
+            padding: 14px 30px;
+            background: transparent;
+            color: var(--neon-magenta);
+            border: 1px solid var(--neon-magenta);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-shadow: 0 0 8px var(--neon-magenta-soft);
+        }
+        .restart-btn:hover {
+            background: var(--neon-magenta);
+            color: #fff;
+            box-shadow: 0 0 32px var(--neon-magenta-soft);
+        }
+
+        /* CPU "考え中" */
+        .thinking {
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .thinking span {
+            width: 4px; height: 4px;
+            background: currentColor;
+            border-radius: 50%;
+            display: inline-block;
+            animation: thinkBlink 1.2s infinite ease-in-out;
+        }
+        .thinking span:nth-child(2) { animation-delay: 0.2s; }
+        .thinking span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes thinkBlink {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1.3); }
+        }
+
+        /* レスポンシブ */
+        @media (max-width: 480px) {
+            .stage { padding: 18px 12px 60px; }
+            .digit-slot { width: 54px; height: 76px; font-size: 40px; }
+            .digit-slots { gap: 10px; }
+            .battler { padding: 10px 6px; }
+            .battler .name { font-size: 13px; }
+            .battler .role { font-size: 9px; letter-spacing: 0.3em; }
+            .my-secret .value { font-size: 14px; }
+            .turn-meter .value { font-size: 22px; }
+            .num-key { font-size: 18px; padding: 12px 0; }
+            .guess-display { font-size: 15px; }
+            .eb-tag { font-size: 9px; padding: 1px 4px; }
+            .vs-mark { font-size: 18px; }
+        }
     </style>
 </head>
 <body>
+<main class="stage">
 
-<div class="container">
-    <h1>Web Numeron</h1>
-    
-    <div id="setupArea" class="box">
-        <h3>あなたの秘密の数字を設定</h3>
-        <input type="text" id="secretInput" placeholder="例: 123 (重複しない3桁)" maxlength="3">
-        <button onclick="startGame()">ゲーム開始</button>
-    </div>
+    <!-- ============ タイトル画面 ============ -->
+    <section id="titleScreen" class="screen active">
+        <div class="title-frame">
+            <div class="title-mark">Numer<span class="zero">0</span>n</div>
+            <div class="title-sub">DIGIT&nbsp;DUEL</div>
+        </div>
+        <div class="title-tag">3桁の数字で挑む頭脳戦</div>
+        <button class="start-btn" onclick="goToScreen('setupScreen')">TAP&nbsp;TO&nbsp;START</button>
+        <div class="credit">A NUMBER GUESSING DUEL · v0.2</div>
+    </section>
 
-    <div id="gameArea" class="box">
-        <h3 id="turnDisplay">ターン: 1</h3>
-        <input type="text" id="guessInput" placeholder="CPUの数字を予想" maxlength="3">
-        <button onclick="makeGuess()">予想する</button>
-        <div id="statusMessage" class="winner"></div>
-        <div id="logs" style="margin-top: 20px;"></div>
+    <!-- ============ セットアップ画面 ============ -->
+    <section id="setupScreen" class="screen">
+        <div class="neon-divider"><span>STAGE 01 · SET YOUR CODE</span></div>
+        <div class="setup-card">
+            <h2 class="setup-title">あなたのコードを設定</h2>
+            <p class="setup-desc">重複のない3桁の数字を選んでください</p>
+
+            <div class="digit-slots" id="setupSlots">
+                <div class="digit-slot active" data-index="0"><span class="digit-value"></span></div>
+                <div class="digit-slot" data-index="1"><span class="digit-value"></span></div>
+                <div class="digit-slot" data-index="2"><span class="digit-value"></span></div>
+            </div>
+
+            <div class="num-pad" id="setupPad"></div>
+
+            <div class="hint-msg" id="setupHint"></div>
+        </div>
+    </section>
+
+    <!-- ============ バトル画面 ============ -->
+    <section id="battleScreen" class="screen">
+        <div class="neon-divider"><span>STAGE 02 · DUEL</span></div>
+
+        <div class="battle-header">
+            <div class="turn-meter">
+                <span class="label">TURN</span>
+                <span class="value" id="turnValue">01</span>
+            </div>
+            <div class="my-secret">
+                <span class="label">YOUR CODE</span>
+                <span class="value" id="mySecretValue">---</span>
+            </div>
+        </div>
+
+        <div class="battlers">
+            <div class="battler you">
+                <div class="role">PLAYER</div>
+                <div class="name">あなた</div>
+            </div>
+            <div class="vs-mark">VS</div>
+            <div class="battler cpu">
+                <div class="role">OPPONENT</div>
+                <div class="name">CPU</div>
+            </div>
+        </div>
+
+        <div class="setup-card" style="padding: 18px;">
+            <p class="setup-desc" style="margin-bottom: 12px;">CPUのコードを予想 — 数字を入力</p>
+            <div class="digit-slots" id="guessSlots">
+                <div class="digit-slot active" data-index="0"><span class="digit-value"></span></div>
+                <div class="digit-slot" data-index="1"><span class="digit-value"></span></div>
+                <div class="digit-slot" data-index="2"><span class="digit-value"></span></div>
+            </div>
+            <div class="num-pad" id="guessPad"></div>
+            <div class="hint-msg" id="guessHint"></div>
+        </div>
+
+        <div class="neon-divider"><span>BATTLE LOG</span></div>
+        <div class="history-section">
+            <div id="historyContainer">
+                <div class="history-empty">まだ予想は記録されていません</div>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- ============ 結果モーダル ============ -->
+<div id="resultOverlay">
+    <div class="result-card">
+        <div class="result-headline" id="resultHeadline">YOU WIN</div>
+        <div class="result-sub" id="resultSub">PERFECT DECODE</div>
+
+        <div class="reveal-row">
+            <span class="label">CPU CODE</span>
+            <span class="value" id="revealCpu">---</span>
+        </div>
+        <div class="reveal-row">
+            <span class="label">YOUR CODE</span>
+            <span class="value gold" id="revealYou">---</span>
+        </div>
+
+        <div class="result-stats">
+            総ターン数 <strong id="totalTurns">-</strong>
+        </div>
+
+        <button class="restart-btn" onclick="restartGame()">PLAY AGAIN</button>
     </div>
 </div>
 
 <script>
-    let currentSessionId = "";
+    // ============ 状態 ============
+    const state = {
+        sessionId: '',
+        mySecret: ['', '', ''],
+        guess: ['', '', ''],
+        loggedTurns: 0,
+    };
 
-    async function startGame() {
-        const secret = document.getElementById('secretInput').value;
-        const res = await fetch('/api/start', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({player_secret: secret})
-        });
-        
-        if (!res.ok) { alert(await res.text()); return; }
-        
-        const data = await res.json();
-        currentSessionId = data.id;
-        document.getElementById('setupArea').style.display = 'none';
-        document.getElementById('gameArea').style.display = 'block';
-        updateUI(data);
-    }
-
-    async function makeGuess() {
-        const guess = document.getElementById('guessInput').value;
-        const res = await fetch('/api/guess', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: currentSessionId, guess: guess})
-        });
-
-        if (!res.ok) { alert(await res.text()); return; }
-        
-        const data = await res.json();
-        document.getElementById('guessInput').value = '';
-        updateUI(data);
-    }
-
-    function updateUI(data) {
-        document.getElementById('turnDisplay').innerText = 'ターン: ' + data.turn;
-        
-        const logsDiv = document.getElementById('logs');
-        logsDiv.innerHTML = '<h3>履歴</h3>';
-        
-        data.logs.slice().reverse().forEach(log => {
-            logsDiv.innerHTML += `
-                <div class="log-item">
-                    <strong>T${log.turn}</strong><br>
-                    あなた: ${log.player_guess} (${log.player_eat}E ${log.player_bite}B)<br>
-                    CPU: ${log.cpu_guess} (${log.cpu_eat}E ${log.cpu_bite}B)
-                </div>
-            `;
-        });
-
-        const statusMsg = document.getElementById('statusMessage');
-        if (data.status === 'player_win') statusMsg.innerText = '🎉 あなたの勝利です！';
-        else if (data.status === 'cpu_win') statusMsg.innerText = '💀 CPUの勝利です...';
-        else if (data.status === 'draw') statusMsg.innerText = '🤝 引き分けです！';
-
-        if (data.status !== 'playing') {
-            document.getElementById('guessInput').disabled = true;
-            document.querySelector('#gameArea button').disabled = true;
+    // ============ 画面遷移 ============
+    function goToScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if (id === 'setupScreen') {
+            buildPad('setupPad', 'setup');
+            updateSlots('setup');
+            refreshPadAvailability('setup');
+        } else if (id === 'battleScreen') {
+            buildPad('guessPad', 'guess');
+            updateSlots('guess');
+            refreshPadAvailability('guess');
         }
     }
+
+    // ============ 数字パッドの構築 ============
+    function buildPad(padId, mode) {
+        const pad = document.getElementById(padId);
+        pad.innerHTML = '';
+        for (let i = 0; i < 10; i++) {
+            const b = document.createElement('button');
+            b.className = 'num-key';
+            b.textContent = i;
+            b.dataset.digit = i;
+            b.onclick = () => pressDigit(i, mode);
+            pad.appendChild(b);
+        }
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'num-key action';
+        clearBtn.textContent = 'CLEAR';
+        clearBtn.onclick = () => clearDigits(mode);
+        pad.appendChild(clearBtn);
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'num-key confirm';
+        confirmBtn.textContent = mode === 'setup' ? 'LOCK IN' : 'GUESS';
+        confirmBtn.id = mode + 'Confirm';
+        confirmBtn.onclick = () => mode === 'setup' ? submitSecret() : submitGuess();
+        pad.appendChild(confirmBtn);
+    }
+
+    function getArr(mode) {
+        return mode === 'setup' ? state.mySecret : state.guess;
+    }
+
+    function pressDigit(d, mode) {
+        const arr = getArr(mode);
+        if (arr.includes(String(d))) {
+            flashHint(mode, 'すでに使われている数字です');
+            return;
+        }
+        const idx = arr.findIndex(v => v === '');
+        if (idx === -1) return;
+        arr[idx] = String(d);
+        clearHint(mode);
+        updateSlots(mode);
+        refreshPadAvailability(mode);
+    }
+
+    function clearDigits(mode) {
+        const arr = getArr(mode);
+        arr[0] = arr[1] = arr[2] = '';
+        clearHint(mode);
+        updateSlots(mode);
+        refreshPadAvailability(mode);
+    }
+
+    function updateSlots(mode) {
+        const containerId = mode === 'setup' ? 'setupSlots' : 'guessSlots';
+        const arr = getArr(mode);
+        const slots = document.querySelectorAll('#' + containerId + ' .digit-slot');
+        const firstEmpty = arr.findIndex(x => x === '');
+        slots.forEach((slot, i) => {
+            const v = arr[i];
+            slot.querySelector('.digit-value').textContent = v;
+            slot.classList.toggle('filled', v !== '');
+            slot.classList.toggle('active', i === firstEmpty);
+        });
+    }
+
+    function refreshPadAvailability(mode) {
+        const arr = getArr(mode);
+        const filled = arr.every(v => v !== '');
+        const padId = mode === 'setup' ? 'setupPad' : 'guessPad';
+        document.querySelectorAll('#' + padId + ' .num-key[data-digit]').forEach(btn => {
+            const d = btn.dataset.digit;
+            const used = arr.includes(d);
+            btn.disabled = used || filled;
+        });
+        const confirm = document.getElementById(mode + 'Confirm');
+        if (confirm) confirm.disabled = !filled;
+    }
+
+    function flashHint(mode, msg) {
+        const el = document.getElementById(mode === 'setup' ? 'setupHint' : 'guessHint');
+        el.textContent = msg;
+    }
+    function clearHint(mode) {
+        document.getElementById(mode === 'setup' ? 'setupHint' : 'guessHint').textContent = '';
+    }
+
+    // ============ ゲーム開始 ============
+    async function submitSecret() {
+        const code = state.mySecret.join('');
+        if (code.length !== 3) return;
+        try {
+            const res = await fetch('/api/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ player_secret: code })
+            });
+            if (!res.ok) {
+                flashHint('setup', await res.text());
+                return;
+            }
+            const data = await res.json();
+            state.sessionId = data.id;
+            document.getElementById('mySecretValue').textContent = code;
+            goToScreen('battleScreen');
+            renderBattle(data, false);
+        } catch (e) {
+            flashHint('setup', '通信エラー: ' + e.message);
+        }
+    }
+
+    // ============ 予想送信 ============
+    async function submitGuess() {
+        const code = state.guess.join('');
+        if (code.length !== 3) return;
+
+        const confirmBtn = document.getElementById('guessConfirm');
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = 'CPU<span class="thinking"><span></span><span></span><span></span></span>';
+
+        try {
+            const res = await fetch('/api/guess', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ session_id: state.sessionId, guess: code })
+            });
+            if (!res.ok) {
+                flashHint('guess', await res.text());
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'GUESS';
+                return;
+            }
+            const data = await res.json();
+            // CPUの“考えてる感”を少し演出
+            await new Promise(r => setTimeout(r, 600));
+            renderBattle(data, true);
+
+            state.guess = ['', '', ''];
+            updateSlots('guess');
+            refreshPadAvailability('guess');
+            confirmBtn.textContent = 'GUESS';
+        } catch (e) {
+            flashHint('guess', '通信エラー: ' + e.message);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'GUESS';
+        }
+    }
+
+    // ============ 描画 ============
+    function renderBattle(data, animateNew) {
+        document.getElementById('turnValue').textContent = String(data.turn).padStart(2, '0');
+        renderHistory(data.logs || [], animateNew);
+        if (data.status && data.status !== 'playing') {
+            setTimeout(() => showResult(data), 800);
+        }
+    }
+
+    function ebTag(kind, n) {
+        const cls = 'eb-tag ' + kind + (n === 0 ? ' zero' : '');
+        const letter = kind === 'eat' ? 'E' : 'B';
+        return `<span class="${cls}"><span class="num">${n}</span>${letter}</span>`;
+    }
+
+    function renderHistory(logs, animateNew) {
+        const container = document.getElementById('historyContainer');
+        if (!logs.length) {
+            container.innerHTML = '<div class="history-empty">まだ予想は記録されていません</div>';
+            state.loggedTurns = 0;
+            return;
+        }
+        const prevCount = state.loggedTurns;
+
+        let html = '<div class="history-grid">';
+        html += '<div class="history-head"><div>T</div><div class="col-you">YOU → CPU</div><div class="col-cpu">CPU → YOU</div></div>';
+
+        const reversed = logs.slice().reverse();
+        reversed.forEach((log, idx) => {
+            const realIdx = logs.length - 1 - idx;
+            const isNew = animateNew && realIdx >= prevCount;
+            const cls = isNew ? 'turn-row new-row' : 'turn-row';
+            html += `
+                <div class="${cls}">
+                    <div class="turn-num">${String(log.turn).padStart(2, '0')}</div>
+                    <div class="cell you">
+                        <span class="guess-display">${log.player_guess}</span>
+                        ${ebTag('eat', log.player_eat)}
+                        ${ebTag('bite', log.player_bite)}
+                    </div>
+                    <div class="cell cpu">
+                        <span class="guess-display">${log.cpu_guess}</span>
+                        ${ebTag('eat', log.cpu_eat)}
+                        ${ebTag('bite', log.cpu_bite)}
+                    </div>
+                </div>`;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        state.loggedTurns = logs.length;
+    }
+
+    // ============ 結果 ============
+    function showResult(data) {
+        const overlay = document.getElementById('resultOverlay');
+        const head = document.getElementById('resultHeadline');
+        const sub = document.getElementById('resultSub');
+
+        head.classList.remove('win', 'lose', 'draw');
+        if (data.status === 'player_win') {
+            head.textContent = 'YOU WIN';
+            head.classList.add('win');
+            sub.textContent = 'PERFECT DECODE';
+        } else if (data.status === 'cpu_win') {
+            head.textContent = 'YOU LOSE';
+            head.classList.add('lose');
+            sub.textContent = 'CODE COMPROMISED';
+        } else {
+            head.textContent = 'DRAW';
+            head.classList.add('draw');
+            sub.textContent = 'SIMULTANEOUS DECODE';
+        }
+
+        const myCode = state.mySecret.join('');
+        // サーバが終了時に開示するコード優先。未提供なら最終ログから推定
+        let cpuCode = data.revealed_cpu || '???';
+        if (cpuCode === '???' && data.logs && data.logs.length) {
+            const last = data.logs[data.logs.length - 1];
+            if (last.player_eat === 3) cpuCode = last.player_guess;
+        }
+        document.getElementById('revealCpu').textContent = cpuCode;
+        document.getElementById('revealYou').textContent = data.revealed_you || myCode;
+        document.getElementById('totalTurns').textContent = data.logs.length;
+
+        overlay.classList.add('active');
+    }
+
+    function restartGame() {
+        document.getElementById('resultOverlay').classList.remove('active');
+        state.sessionId = '';
+        state.mySecret = ['', '', ''];
+        state.guess = ['', '', ''];
+        state.loggedTurns = 0;
+        document.getElementById('historyContainer').innerHTML = '<div class="history-empty">まだ予想は記録されていません</div>';
+        document.getElementById('mySecretValue').textContent = '---';
+        goToScreen('titleScreen');
+    }
+
+    // ============ キーボード入力 ============
+    document.addEventListener('keydown', (e) => {
+        const setupActive = document.getElementById('setupScreen').classList.contains('active');
+        const battleActive = document.getElementById('battleScreen').classList.contains('active');
+        const overlayActive = document.getElementById('resultOverlay').classList.contains('active');
+        if (overlayActive) return;
+        const mode = setupActive ? 'setup' : (battleActive ? 'guess' : null);
+        if (!mode) return;
+
+        if (e.key >= '0' && e.key <= '9') {
+            pressDigit(parseInt(e.key, 10), mode);
+            e.preventDefault();
+        } else if (e.key === 'Backspace') {
+            const arr = getArr(mode);
+            for (let i = 2; i >= 0; i--) {
+                if (arr[i] !== '') { arr[i] = ''; break; }
+            }
+            updateSlots(mode);
+            refreshPadAvailability(mode);
+            clearHint(mode);
+            e.preventDefault();
+        } else if (e.key === 'Enter') {
+            const arr = getArr(mode);
+            if (arr.every(v => v !== '')) {
+                mode === 'setup' ? submitSecret() : submitGuess();
+            }
+        }
+    });
+
+    // 初期化
+    buildPad('setupPad', 'setup');
+    buildPad('guessPad', 'guess');
+    refreshPadAvailability('setup');
+    refreshPadAvailability('guess');
 </script>
 </body>
 </html>

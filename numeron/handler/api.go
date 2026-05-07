@@ -128,6 +128,12 @@ func (h *APIHandler) HandleGuess(w http.ResponseWriter, r *http.Request) {
 		session.Turn++
 	}
 
+	// 試合終了時はコードを開示する
+	if session.Status != "playing" {
+		session.RevealedCpu = game.FormatSecret(session.CpuSecret)
+		session.RevealedYou = game.FormatSecret(session.PlayerSecret)
+	}
+
 	// 状態を更新して保存し、クライアントに返す
 	h.store.Save(session)
 
