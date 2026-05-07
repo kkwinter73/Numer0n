@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Numeron</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f9; display: flex; justify-content: center; padding: 20px; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+        h1 { text-align: center; color: #333; }
+        .box { margin-bottom: 15px; padding: 15px; background: #eef; border-radius: 5px; }
+        input { padding: 10px; font-size: 16px; width: calc(100% - 22px); margin-bottom: 10px; box-sizing: border-box; }
+        button { padding: 10px; font-size: 16px; width: 100%; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        .log-item { border-bottom: 1px solid #ccc; padding: 10px 0; }
+        #gameArea { display: none; }
+        .winner { color: red; font-weight: bold; font-size: 1.2em; text-align: center; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Web Numeron</h1>
+    
+    <div id="setupArea" class="box">
+        <h3>あなたの秘密の数字を設定</h3>
+        <input type="text" id="secretInput" placeholder="例: 123 (重複しない3桁)" maxlength="3">
+        <button onclick="startGame()">ゲーム開始</button>
+    </div>
+
+    <div id="gameArea" class="box">
+        <h3 id="turnDisplay">ターン: 1</h3>
+        <input type="text" id="guessInput" placeholder="CPUの数字を予想" maxlength="3">
+        <button onclick="makeGuess()">予想する</button>
+        <div id="statusMessage" class="winner"></div>
+        <div id="logs" style="margin-top: 20px;"></div>
+    </div>
+</div>
+
+<script>
+    let currentSessionId = "";
+
+    async function startGame() {
+        const secret = document.getElementById('secretInput').value;
+        const res = await fetch('/api/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player_secret: secret})
+        });
+        
+        if (!res.ok) { alert(await res.text()); return; }
+        
+        const data = await res.json();
+        currentSessionId = data.id;
+        document.getElementById('setupArea').style.display = 'none';
+        document.getElementById('gameArea').style.display = 'block';
+        updateUI(data);
+    }
+
+    async function makeGuess() {
+        const guess = document.getElementById('guessInput').value;
+        const res = await fetch('/api/guess', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: currentSessionId, guess: guess})
+        });
+
+        if (!res.ok) { alert(await res.text()); return; }
+        
+        const data = await res.json();
+        document.getElementById('guessInput').value = '';
+        updateUI(data);
+    }
+
+    function updateUI(data) {
+        document.getElementById('turnDisplay').innerText = 'ターン: ' + data.turn;
+        
+        const logsDiv = document.getElementById('logs');
+        logsDiv.innerHTML = '<h3>履歴</h3>';
+        
+        data.logs.slice().reverse().forEach(log => {
+            logsDiv.innerHTML += `
+                <div class="log-item">
+                    <strong>T${log.turn}</strong><br>
+                    あなた: ${log.player_guess} (${log.player_eat}E ${log.player_bite}B)<br>
+                    CPU: ${log.cpu_guess} (${log.cpu_eat}E ${log.cpu_bite}B)
+                </div>
+            `;
+        });
+
+        const statusMsg = document.getElementById('statusMessage');
+        if (data.status === 'player_win') statusMsg.innerText = '🎉 あなたの勝利です！';
+        else if (data.status === 'cpu_win') statusMsg.innerText = '💀 CPUの勝利です...';
+        else if (data.status === 'draw') statusMsg.innerText = '🤝 引き分けです！';
+
+        if (data.status !== 'playing') {
+            document.getElementById('guessInput').disabled = true;
+            document.querySelector('#gameArea button').disabled = true;
+        }
+    }
+</script>
+</body>
+</html>
