@@ -6,7 +6,6 @@ import (
 	"fmt"
 	mrand "math/rand" // 「mrand」というエイリアスを付ける
 	"strconv"
-	"time"
 )
 
 // Session は1つのゲーム状態を表すドメインモデルです
@@ -43,11 +42,6 @@ type TurnLog struct {
 	CpuGuess    string `json:"cpu_guess"`
 	CpuEat      int    `json:"cpu_eat"`
 	CpuBite     int    `json:"cpu_bite"`
-}
-
-func init() {
-	// math/rand の方は mrand として呼び出す
-	mrand.Seed(time.Now().UnixNano())
 }
 
 // GenerateID は一意のセッションIDを生成します
