@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NUMER0N</title>
+<title>NUMER0N — 数字推理ステージ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -1419,6 +1419,20 @@ header.brand {
   // ===================================================
   // API HELPER
   // ===================================================
+
+  // ApiError は構造化エラーレスポンスを表すカスタムエラー型。
+  // サーバーが返した code と message をプロパティとして保持する。
+  // 呼び出し側は `err.code === 'INVALID_INPUT'` のような分岐ができる。
+  class ApiError extends Error {
+    constructor(code, message, details, httpStatus) {
+      super(message || `HTTP ${httpStatus}`);
+      this.name = "ApiError";
+      this.code = code || "UNKNOWN";
+      this.details = details || null;
+      this.httpStatus = httpStatus;
+    }
+  }
+
   async function api(path, body) {
     const res = await fetch(path, {
       method: "POST",
@@ -1431,8 +1445,13 @@ header.brand {
       try { data = JSON.parse(text); } catch { /* not json */ }
     }
     if (!res.ok) {
-      const msg = (data && data.error) || text || `HTTP ${res.status}`;
-      throw new Error(msg.trim());
+      // 新形式: { "error": { "code": "...", "message": "...", "details": {...} } }
+      // 旧形式の保険として、data.error が文字列ならそれを message として扱う。
+      if (data && data.error && typeof data.error === "object") {
+        throw new ApiError(data.error.code, data.error.message, data.error.details, res.status);
+      }
+      const msg = (data && typeof data.error === "string" ? data.error : null) || text || `HTTP ${res.status}`;
+      throw new ApiError("UNKNOWN", msg.trim(), null, res.status);
     }
     return data;
   }
