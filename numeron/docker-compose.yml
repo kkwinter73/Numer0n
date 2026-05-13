@@ -1,0 +1,48 @@
+# Numeron - 開発用Docker Compose
+#
+# 用途: ローカル開発で PostgreSQL / Redis を起動するため。
+# Goサーバーは Docker 内ではなくホスト側で `go run ./cmd/server` で動かす想定です。
+# (コードの再ビルドを高速にするため)
+#
+# 起動: docker compose up -d
+# 停止: docker compose down
+# データを消す: docker compose down -v   (-v でボリュームも削除)
+#
+# 接続例:
+#   DATABASE_URL=postgres://numeron:numeron@localhost:5432/numeron?sslmode=disable
+#   REDIS_URL=redis://localhost:6379/0
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: numeron-postgres
+    environment:
+      POSTGRES_USER: numeron
+      POSTGRES_PASSWORD: numeron
+      POSTGRES_DB: numeron
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U numeron -d numeron"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: numeron-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
+  redis-data:

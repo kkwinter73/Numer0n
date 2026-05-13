@@ -72,8 +72,8 @@ cmd/server/main.go                エントリーポイント (依存組み立�
 - ✅ **1.7** 統合テスト (httphandler 95.0%, 全体 121件パス)
 
 ### フェーズ2: DB + 設定管理 + フロント基盤
-- ⬜ **2.1** envconfig による設定管理 + Docker Compose (PostgreSQL + Redis)
-- ⬜ **2.2** sqlc + golang-migrate セットアップ
+- ✅ **2.1** envconfig による設定管理 + Docker Compose (PostgreSQL + Redis) + ヘルスチェック
+- ⬜ **2.2** PostgreSQL + sqlc + golang-migrate
 - ⬜ **2.3** スキーマ設計 (`users`, `matches`, `match_logs`, `ranking_entries`)
 - ⬜ **2.4** リポジトリのDB実装 + testcontainers
 - ⬜ **2.5** React + Vite + TS の足場構築 (既存フロントはそのまま)
@@ -114,26 +114,24 @@ cmd/server/main.go                エントリーポイント (依存組み立�
 
 ## 🧭 現在地
 
-**🎉 フェーズ 1 完了**: Goアーキテクチャの基礎が固まりました。
+**フェーズ 2.1 完了**: 設定管理 + ヘルスチェック + Docker Compose セットアップ。
 
-### フェーズ1 達成内容
-- **アーキテクチャ**: cmd → adapter → usecase → port → domain の一方向依存
-- **テスト**: 121件、`-race` 含めて全パス
-- **カバレッジ**:
-  - domain: 99.4%
-  - usecase: 91.1%
-  - observability: 93.4%
-  - httphandler: 95.0%
-- **構造化エラー**: `{error:{code,message,details}}` 形式、8種のエラーコード
-- **観測性**: `slog` + リクエストID + アクセスログ + パニック回復
-- **インターフェース分離**: persistence 差し替え可能な構造
+### 2.1 で追加したもの
+- `internal/config/` パッケージ (環境変数 → Config構造体、検証付き)
+- `httphandler/health_handler.go` (`/api/health` エンドポイント、依存先チェック対応)
+- `docker-compose.yml` (PostgreSQL 16 + Redis 7)
+- `.env.example`, `.gitignore`
+- README にセットアップ手順
 
-### 統計
-- ファイル数 (.go): 30+
-- 総行数: 約4500行 (テスト含む)
-- 外部依存: ゼロ (標準ライブラリのみ)
+### カバレッジ
+- config: 100%
+- domain: 99.4%
+- usecase: 91.1%
+- observability: 93.4%
+- httphandler: 95.5%
+- persistence: 0% (フェーズ2.2でDB導入と同時にtestcontainers)
 
-次のセッションでは **フェーズ 2** (DB導入) から開始します。
+次のセッションでは **フェーズ 2.2** (sqlc + golang-migrate + 初回スキーマ) に進みます。
 
 ---
 
@@ -232,6 +230,24 @@ ORM (GORM等) より型安全で、SQLそのものを書くため SQL力が付�
 - **時間に依存するテスト**: poll の起床テストは閾値 < 2秒で判定 (テストごとに環境差を吸収)
 - **persistence 層は フェーズ2 で testcontainers + 統合テスト**: メモリ実装のテストは今は不要
 
+### 設定管理 (フェーズ2.1で確立)
+- **12-factor App 原則**: 設定は環境変数経由のみ。コードや設定ファイルにハードコードしない
+- **自前で軽量実装**: `envconfig` 等の外部ライブラリ不要。`os.Getenv` + 型変換 + バリデーションを config パッケージに集約
+- **検証は起動時に**: 不正な値 (例: `PORT=abc`) なら main() が即時 fail。`os.Stderr` に明確な理由を書いて `os.Exit(1)`
+- **デフォルト値を必ず用意**: `getEnv(key, default)` パターンで「環境変数なし」でも開発時は動く
+- **.env は自動読み込みしない**: シンプルさ重視。ユーザーは `env $(cat .env | xargs) go run ./cmd/server` 等で渡す
+  - 別案: `direnv` を使えば自動。本プロジェクトは direnv 推奨だが必須にしない
+
+### ヘルスチェック設計 (フェーズ2.1で確立)
+- **`HealthChecker` インターフェース**: `Name()` と `Check(ctx) error` の2メソッド
+  - DB/Redis/外部API等、依存先ごとに別の実装
+  - フェーズ2.2 で `DBHealthChecker` を追加していく
+- **タイムアウト**: 各チェッカーごとに 2秒のコンテキストタイムアウト
+  - ヘルスチェック自体がハングするのを防ぐ
+- **ステータスコード**: 全依存OK → 200, 1つでも fail → 503
+  - ロードバランサ (k8s liveness probe等) で自動切り離しに使える
+- **失敗の詳細はレスポンスに含める**: `{name: "...", status: "fail", error: "..."}` で運用者が原因特定可能
+
 ---
 
 ## 🚀 環境セットアップ
@@ -253,56 +269,68 @@ go run ./cmd/server
 
 ## 🔄 次セッションへの引き継ぎ
 
-### 次にやること: フェーズ2.1 (設定管理 + Docker Compose)
+### 次にやること: フェーズ2.2 (sqlc + golang-migrate セットアップ)
 
-**フェーズ2 のゴール**: メモリ実装 → PostgreSQL 実装に差し替え。
-フェーズ1で port/adapter を分離してあるので、上位層には影響しないはず(リグレッション検出は統合テストが担当)。
+**目的**: 型安全なDBアクセスのインフラを整え、初回のテーブル (例: `cpu_sessions`) を作って動作確認します。
+このセッションでは「DB接続して読み書きできる」までを目指し、既存のメモリ実装の置き換えは **2.4** に回します。
 
-**2.1 で具体的にやる作業**:
+**2.2 で具体的にやる作業**:
 
-1. **設定管理 (config パッケージ)**:
-   - 環境変数を構造体にマッピング (現状は main.go の `os.Getenv` 散在)
-   - 例:
-     ```go
-     type Config struct {
-         Port        string `env:"PORT" default:"8080"`
-         LogFormat   string `env:"LOG_FORMAT" default:"text"`
-         LogLevel    string `env:"LOG_LEVEL" default:"info"`
-         DatabaseURL string `env:"DATABASE_URL"`
-         RedisURL    string `env:"REDIS_URL"`
-     }
-     ```
-   - 外部依存を使うか自前で書くか: 自前推奨 (依存最小化)
+1. **PostgreSQL ドライバ追加**:
+   ```bash
+   go get github.com/jackc/pgx/v5/stdlib  # database/sql 互換ドライバ
+   ```
 
-2. **Docker Compose**:
-   - `docker-compose.yml` で PostgreSQL + Redis を起動
-   - 開発時: `docker compose up -d` で依存サービスを立ち上げ、Goサーバーはホストで起動
-   - PostgreSQL 16 (現時点の安定版)、Redis 7
+2. **golang-migrate**: マイグレーション管理
+   - インストール: `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
+   - `db/migrations/` ディレクトリ作成
+   - 初回マイグレーション: `000001_init.up.sql` / `000001_init.down.sql`
 
-3. **.env サポート**:
-   - `.env.example` を用意
-   - main.go で .env を読み込む (godotenv または自前)
+3. **sqlc**: SQLから型安全なGoコード生成
+   - インストール: `brew install sqlc` または `go install`
+   - `sqlc.yaml` 作成 (生成設定)
+   - `db/queries/*.sql` にクエリを書く
+   - `sqlc generate` で `internal/adapter/persistence/sqlc/` に Go コードが生成される
 
-4. **ヘルスチェックエンドポイント**:
-   - `/api/health` → DB接続状態を含む簡単なヘルスチェック
-   - フェーズ2.2以降でDB接続を追加していく
+4. **DB接続ヘルパー**: `internal/adapter/persistence/db.go`
+   - `*sql.DB` 作成 + 接続プール設定
+   - 接続失敗時のリトライ (固定回数で)
+
+5. **DBHealthChecker**: `httphandler` から `db.Ping()` できる
+   - フェーズ2.1 で作った `HealthChecker` インターフェースの実装
+   - `main.go` で `NewHealthHandler(NewDBHealthChecker(db))` に変更
+
+6. **テスト**: testcontainers-go で PostgreSQL を起動
+   - `internal/adapter/persistence/db_test.go`
+   - CI でも動かせる
 
 **ポイント**:
-- まだDB接続コードは書かない (フェーズ2.2 で sqlc とともに)
-- 設定の単体テストを書く (テスト中に環境変数を一時的に上書き)
-- フェーズ2.1 が終わったら、ローカル開発で `docker compose up -d && go run ./cmd/server` が動く状態
+- 最初の sqlc クエリは `SELECT 1` 等の簡単なものから
+- マイグレーションは1方向 (`up`) と巻き戻し (`down`) を必ずセットで書く
+- パスワード等は環境変数 (`DATABASE_URL`) で渡す
+- 接続文字列は本番では SSL 必須 (`sslmode=require`)、開発は `sslmode=disable` でOK
 
 ### 開始時のコマンド
 
 ```bash
 cd numeron
-docker compose version  # docker が入っているか確認 (なければインストール)
-go test ./...           # 現状のテストが通ることを確認
+# (まだdockerが入っていなければ Docker Desktop インストール)
+docker compose up -d
+docker compose ps   # 両サービスがhealthyになるまで30秒程度
+
+# 既存テストが全パスすることを確認
+go test ./...
 ```
 
 ### セッション継続のための合言葉
 
-「フェーズ2.1をやろう」で再開できます。
+「フェーズ2.2をやろう」で再開できます。
+
+### 注意点
+
+- このフェーズから **Docker が必要** になります
+- 統合テストが testcontainers を使うので、Docker daemon が動いている必要あり
+- CI/CD で実行するなら GitHub Actions 等で services として PostgreSQL を上げる方法もある
 
 ---
 
@@ -313,10 +341,16 @@ numeron/
 ├── DEVELOPMENT.md              ← このファイル
 ├── README.md
 ├── go.mod
+├── docker-compose.yml          PostgreSQL + Redis (開発用)
+├── .env.example
+├── .gitignore
 ├── cmd/
 │   └── server/
 │       └── main.go             エントリーポイント (依存組み立て + ミドルウェアチェーン)
 ├── internal/
+│   ├── config/                 環境変数 → Config 構造体
+│   │   ├── config.go
+│   │   └── config_test.go
 │   ├── domain/                 ドメインモデル (依存なし)
 │   │   ├── numeron.go          + numeron_test.go
 │   │   ├── turnlog.go
@@ -338,11 +372,13 @@ numeron/
 │       │   ├── common.go       JSON書き出し + 汎用エラーヘルパー
 │       │   ├── api_error.go    APIError型 + コード定数 + usecase→HTTPマッピング + ログ
 │       │   ├── api_error_test.go
+│       │   ├── health_handler.go  ヘルスチェック (依存先チェッカーインターフェース付き)
+│       │   ├── health_handler_test.go
 │       │   ├── cpu_handler.go
-│       │   ├── cpu_integration_test.go  統合テスト
+│       │   ├── cpu_integration_test.go
 │       │   ├── online_handler.go
-│       │   ├── online_integration_test.go  統合テスト
-│       │   └── integration_helpers_test.go  testServer + ヘルパー
+│       │   ├── online_integration_test.go
+│       │   └── integration_helpers_test.go
 │       └── persistence/        ストレージ実装 (現メモリ、将来DB)
 │           ├── session_store.go
 │           └── room_store.go
@@ -357,8 +393,8 @@ numeron/
 
 - `domain/room.go` に sync 機構が同居 → フェーズ3で WS hub に移す
 - `TurnLog` のフィールド名 `player_*`/`cpu_*` がオンライン対戦で不自然 → フロント書き換えと同時にリネーム検討
-- ~~handler 層のテストが api_error 中心~~ ✅ フェーズ1.7 で 95% カバレッジ達成
 - `usecase.SubmitSecret` / `SubmitGuess` で domain エラーを文字列で判定している → 後続で domain 層のエラー型化検討
-- persistence 層にテストが無い → フェーズ2 で DB 実装と同時に testcontainers で書く
+- persistence 層にテストが無い → フェーズ2.4 で DB 実装と同時に testcontainers で書く
 - フロントは `console.log` を使っていない (将来 sentry等を入れる場合に検討)
 - メモリストア (RoomStore) のGCループに停止手段がない → context.Context 受け取りに変える
+- `/api/health` がまだ依存先チェッカーを持たない (空) → フェーズ2.2 で `DBHealthChecker` 追加
