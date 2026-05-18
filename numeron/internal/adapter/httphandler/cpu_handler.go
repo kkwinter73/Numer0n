@@ -40,7 +40,7 @@ func (h *CPUHandler) HandleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.uc.StartGame(req.PlayerSecret)
+	session, err := h.uc.StartGame(r.Context(), req.PlayerSecret)
 	if err != nil {
 		writeUsecaseError(r.Context(), w, err)
 		return
@@ -61,7 +61,7 @@ func (h *CPUHandler) HandleGuess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.uc.MakeGuess(req.SessionID, req.Guess)
+	session, err := h.uc.MakeGuess(r.Context(), req.SessionID, req.Guess)
 	if err != nil {
 		writeUsecaseError(r.Context(), w, err)
 		return

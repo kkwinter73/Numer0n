@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -16,7 +17,7 @@ func TestCPUUsecase_StartGame_success(t *testing.T) {
 	repo := newFakeSessionRepo()
 	uc := NewCPUUsecase(repo)
 
-	session, err := uc.StartGame("123")
+	session, err := uc.StartGame(context.Background(), "123")
 	if err != nil {
 		t.Fatalf("StartGame failed: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestCPUUsecase_StartGame_invalidInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := newFakeSessionRepo()
 			uc := NewCPUUsecase(repo)
-			_, err := uc.StartGame(tt.input)
+			_, err := uc.StartGame(context.Background(), tt.input)
 			if err == nil {
 				t.Fatalf("エラーを期待")
 			}
@@ -68,7 +69,7 @@ func TestCPUUsecase_StartGame_saveError(t *testing.T) {
 	repo.saveError = fmt.Errorf("DB connection lost")
 	uc := NewCPUUsecase(repo)
 
-	_, err := uc.StartGame("123")
+	_, err := uc.StartGame(context.Background(), "123")
 	if err == nil {
 		t.Fatalf("エラーを期待")
 	}
@@ -87,12 +88,12 @@ func TestCPUUsecase_MakeGuess_success(t *testing.T) {
 	uc := NewCPUUsecase(repo)
 
 	// セッションを作成
-	session, err := uc.StartGame("123")
+	session, err := uc.StartGame(context.Background(), "123")
 	if err != nil {
 		t.Fatalf("StartGame: %v", err)
 	}
 
-	updated, err := uc.MakeGuess(session.ID, "456")
+	updated, err := uc.MakeGuess(context.Background(), session.ID, "456")
 	if err != nil {
 		t.Fatalf("MakeGuess: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestCPUUsecase_MakeGuess_success(t *testing.T) {
 func TestCPUUsecase_MakeGuess_sessionNotFound(t *testing.T) {
 	repo := newFakeSessionRepo()
 	uc := NewCPUUsecase(repo)
-	_, err := uc.MakeGuess("nonexistent", "456")
+	_, err := uc.MakeGuess(context.Background(), "nonexistent", "456")
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Errorf("ErrSessionNotFound を期待。got: %v", err)
 	}
@@ -117,11 +118,11 @@ func TestCPUUsecase_MakeGuess_gameAlreadyOver(t *testing.T) {
 	repo := newFakeSessionRepo()
 	uc := NewCPUUsecase(repo)
 
-	session, _ := uc.StartGame("123")
+	session, _ := uc.StartGame(context.Background(), "123")
 	session.Status = domain.SessionPlayerWin
-	_ = repo.Save(session)
+	_ = repo.Save(context.Background(), session)
 
-	_, err := uc.MakeGuess(session.ID, "456")
+	_, err := uc.MakeGuess(context.Background(), session.ID, "456")
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Errorf("終了済みセッションで ErrSessionNotFound を期待。got: %v", err)
 	}
@@ -130,9 +131,9 @@ func TestCPUUsecase_MakeGuess_gameAlreadyOver(t *testing.T) {
 func TestCPUUsecase_MakeGuess_invalidGuess(t *testing.T) {
 	repo := newFakeSessionRepo()
 	uc := NewCPUUsecase(repo)
-	session, _ := uc.StartGame("123")
+	session, _ := uc.StartGame(context.Background(), "123")
 
-	_, err := uc.MakeGuess(session.ID, "112")
+	_, err := uc.MakeGuess(context.Background(), session.ID, "112")
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Errorf("ErrInvalidInput を期待。got: %v", err)
 	}
@@ -142,13 +143,13 @@ func TestCPUUsecase_MakeGuess_playerWin(t *testing.T) {
 	repo := newFakeSessionRepo()
 	uc := NewCPUUsecase(repo)
 
-	session, _ := uc.StartGame("123")
+	session, _ := uc.StartGame(context.Background(), "123")
 	// CpuSecret を固定値にセット (テストの決定性のため)
 	session.CpuSecret = domain.Secret{4, 5, 6}
-	_ = repo.Save(session)
+	_ = repo.Save(context.Background(), session)
 
 	// 456 を当てる
-	updated, err := uc.MakeGuess(session.ID, "456")
+	updated, err := uc.MakeGuess(context.Background(), session.ID, "456")
 	if err != nil {
 		t.Fatalf("MakeGuess: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestCPUUsecase_MakeGuess_getError(t *testing.T) {
 	repo := newFakeSessionRepo()
 	repo.getError = fmt.Errorf("DB timeout")
 	uc := NewCPUUsecase(repo)
-	_, err := uc.MakeGuess("any", "456")
+	_, err := uc.MakeGuess(context.Background(), "any", "456")
 	if err == nil {
 		t.Fatal("エラーを期待")
 	}

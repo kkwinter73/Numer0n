@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 
@@ -26,14 +27,14 @@ func NewCPUUsecase(sessions port.SessionRepository) *CPUUsecase {
 // エラー:
 //   - ErrInvalidInput: 暗証番号が不正
 //   - その他: ストレージ I/O エラー (DBダウン等)
-func (u *CPUUsecase) StartGame(playerSecretStr string) (*domain.Session, error) {
+func (u *CPUUsecase) StartGame(ctx context.Context, playerSecretStr string) (*domain.Session, error) {
 	secret, err := domain.ParseSecret(playerSecretStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
 	session := domain.NewSession(secret)
-	if err := u.sessions.Save(session); err != nil {
+	if err := u.sessions.Save(ctx, session); err != nil {
 		return nil, fmt.Errorf("セッション保存失敗: %w", err)
 	}
 	return session, nil
@@ -48,8 +49,8 @@ func (u *CPUUsecase) StartGame(playerSecretStr string) (*domain.Session, error) 
 //   - ErrSessionNotFound: セッションが見つからない、または既に終了している
 //   - ErrInvalidInput: 予想が不正
 //   - その他: ストレージ I/O エラー
-func (u *CPUUsecase) MakeGuess(sessionID, guessStr string) (*domain.Session, error) {
-	session, ok, err := u.sessions.Get(sessionID)
+func (u *CPUUsecase) MakeGuess(ctx context.Context, sessionID, guessStr string) (*domain.Session, error) {
+	session, ok, err := u.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("セッション取得失敗: %w", err)
 	}
@@ -99,7 +100,7 @@ func (u *CPUUsecase) MakeGuess(sessionID, guessStr string) (*domain.Session, err
 		session.FinalizeReveal()
 	}
 
-	if err := u.sessions.Save(session); err != nil {
+	if err := u.sessions.Save(ctx, session); err != nil {
 		return nil, fmt.Errorf("セッション保存失敗: %w", err)
 	}
 	return session, nil

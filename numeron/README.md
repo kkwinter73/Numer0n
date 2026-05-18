@@ -7,38 +7,41 @@ CPU対戦とオンライン2人対戦に対応しています。
 ## クイックスタート (DB なし)
 
 ```bash
-# Go 1.22 以上が必要
+# Go 1.22 以上
 go run ./cmd/server
 ```
 
-ブラウザで http://localhost:8080 を開く。
+→ ブラウザで http://localhost:8080 を開く。CPU対戦は揮発性メモリで動作します。
+
+## ビルドモード
+
+このプロジェクトは2モードのビルドをサポートします:
+
+| モード | コマンド | CPU対戦 | 外部依存 |
+|---|---|---|---|
+| **デフォルト** | `go build ./cmd/server` | メモリ実装のみ | 標準ライブラリのみ |
+| **postgres** | `go build -tags postgres ./cmd/server` | DB ありなら永続化、なければメモリ | pgx, sqlc生成コード, google/uuid |
+
+`postgres` モードは `DATABASE_URL` 環境変数の有無で実装を自動切替します。
 
 ## ローカル開発環境 (DB あり)
 
 ### 必要なもの
 - Go 1.22+
-- Docker + Docker Compose (PostgreSQL / Redis 用)
-- sqlc (DBクエリのコード生成)
-- golang-migrate (マイグレーション)
-
-### ツールのインストール (1度だけ)
-
-```bash
-# sqlc
-go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-# または: brew install sqlc
-
-# golang-migrate
-go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-# または: brew install golang-migrate
-```
+- Docker + Docker Compose
+- sqlc
+- golang-migrate
 
 ### 初回セットアップ
 
 ```bash
-# 1. PostgreSQL ドライバを追加
-go get github.com/jackc/pgx/v5/stdlib@v5.5.5    # Go 1.22 推奨
-# Go 1.23+ なら v5.7.5、Go 1.25+ なら最新版
+# 1. 必要な依存を取得
+go get github.com/jackc/pgx/v5/stdlib@v5.5.5    # Go 1.22 の場合
+go get github.com/google/uuid
+# テスト用
+go get github.com/testcontainers/testcontainers-go
+go get github.com/testcontainers/testcontainers-go/modules/postgres
+go get github.com/golang-migrate/migrate/v4
 
 # 2. internal/adapter/persistence/db.go の冒頭で
 #    _ "github.com/jackc/pgx/v5/stdlib"
@@ -58,8 +61,11 @@ migrate -path db/migrations \
 # 6. sqlc でGoコード生成
 sqlc generate
 
-# 7. Goサーバー起動
-env $(cat .env | xargs) go run ./cmd/server
+# 7. テスト (DB統合テスト含む)
+go test -tags postgres ./... -race
+
+# 8. Goサーバー起動 (postgres モード)
+env $(cat .env | xargs) go run -tags postgres ./cmd/server
 ```
 
 ### 日常的な開発フロー
@@ -67,17 +73,17 @@ env $(cat .env | xargs) go run ./cmd/server
 ```bash
 # 起動
 docker compose up -d
-env $(cat .env | xargs) go run ./cmd/server
+env $(cat .env | xargs) go run -tags postgres ./cmd/server
 
 # SQLクエリ変更時
 vim db/queries/xxxxx.sql
-sqlc generate    # コード再生成
-go test ./...
+sqlc generate
+go test -tags postgres ./...
 
 # スキーマ変更時
-migrate create -ext sql -dir db/migrations -seq add_users  # 新ファイル作成
-vim db/migrations/000002_add_users.up.sql    # 編集
-vim db/migrations/000002_add_users.down.sql
+migrate create -ext sql -dir db/migrations -seq add_xxx
+vim db/migrations/000005_add_xxx.up.sql
+vim db/migrations/000005_add_xxx.down.sql
 migrate -path db/migrations -database "$DATABASE_URL" up
 sqlc generate
 
@@ -105,7 +111,7 @@ docker compose down -v    # ボリュームも (DBデータ消える)
 | メソッド | パス | 説明 |
 |---|---|---|
 | GET | `/` | フロントエンド |
-| GET | `/api/health` | ヘルスチェック (依存先のDB等含む) |
+| GET | `/api/health` | ヘルスチェック |
 | POST | `/api/start` | CPU対戦開始 |
 | POST | `/api/guess` | CPU対戦の予想 |
 | POST | `/api/online/create` | ルーム作成 |
@@ -115,38 +121,115 @@ docker compose down -v    # ボリュームも (DBデータ消える)
 | POST | `/api/online/guess` | オンライン予想 |
 | GET | `/api/online/poll` | ロングポーリング |
 
-## テスト
+## フロントエンド開発 (React)
+
+新規画面は `web/app/` の React + Vite + TypeScript で開発します。
+既存のゲーム本体 (`web/static/index.html`) はそのまま並列稼働しています。
+
+### セットアップ
 
 ```bash
+cd web/app
+npm install
+```
+
+### 開発
+
+```bash
+# ターミナル1: Go サーバー
+cd numeron
+go run ./cmd/server      # http://localhost:8080
+
+# ターミナル2: Vite dev サーバー
+cd numeron/web/app
+npm run dev              # http://localhost:5173
+```
+
+Vite が `/api` と `/ws` を `localhost:8080` にプロキシするので、
+ブラウザで `http://localhost:5173/app` を開けば動作確認できます。
+
+### ビルド
+
+```bash
+cd web/app
+npm run build            # → dist/ に出力
+npm run preview          # ビルド済みファイルでローカルプレビュー
+```
+
+### ディレクトリ
+
+```
+web/app/
+├── package.json
+├── vite.config.ts        Vite設定 (proxy 含む)
+├── tsconfig.json         TypeScript strict mode
+├── index.html
+└── src/
+    ├── main.tsx          エントリーポイント
+    ├── App.tsx           ルート定義
+    ├── styles.css        ベーススタイル
+    ├── api/
+    │   ├── client.ts     fetch ラッパー
+    │   ├── error.ts      ApiError クラス
+    │   ├── types.ts      サーバー API レスポンス型
+    │   └── numeron.ts    API ラッパー関数
+    ├── pages/
+    │   ├── HomePage.tsx
+    │   └── HealthPage.tsx
+    ├── components/
+    ├── hooks/
+    └── store/
+        └── auth.ts       Zustand 認証ストア (フェーズ4 で本格使用)
+```
+
+## テスト
+
+### バックエンド (Go)
+```bash
+# デフォルト (メモリ実装のみ)
 go test ./... -race -cover
+
+# postgres モード (Docker 起動済み前提)
+go test -tags postgres ./... -race -cover
+```
+
+### フロントエンド (型チェックのみ)
+```bash
+cd web/app
+npm run lint    # TypeScript の型チェック
+npm run build   # ビルド成否で検証
 ```
 
 ## 開発
 
 開発を続ける場合は **[DEVELOPMENT.md](./DEVELOPMENT.md)** を最初に読んでください。
-ロードマップ、技術選定、進行中のフェーズ、次にやることが全て書いてあります。
 
 ## ディレクトリ構成
 
 ```
-cmd/server/main.go           エントリーポイント
+cmd/server/main.go        エントリーポイント
 db/
-  migrations/                golang-migrate 用
-  queries/                   sqlc 用クエリ定義
-sqlc.yaml                    sqlc 設定
+  SCHEMA.md               ER図と設計判断
+  migrations/             golang-migrate
+  queries/                sqlc クエリ
+sqlc.yaml
 internal/
-  config/                    環境変数 → Config 構造体
-  domain/                    ドメインモデル (依存なし)
-  usecase/                   アプリケーションロジック
-  port/                      インターフェース定義
-  observability/             ロガー + ミドルウェア
+  config/                 環境変数 → Config
+  domain/                 ドメインモデル
+  usecase/                ビジネスフロー
+  port/                   インターフェース
+  observability/          ロガー + ミドルウェア
   adapter/
-    httphandler/             HTTPハンドラ
-    persistence/             ストレージ (メモリ + DB)
-      sqlc/                  sqlc 生成コード (要 `sqlc generate`)
-web/static/                  フロントエンド
-docker-compose.yml           開発用 PostgreSQL + Redis
-.env.example                 環境変数サンプル
+    httphandler/          HTTPハンドラ
+    persistence/          ストレージ
+      session_store.go         メモリ実装 (CPU)
+      room_store.go            メモリ実装 (オンライン)
+      postgres_session_store.go (postgres タグでビルド)
+      factory.go               デフォルト: メモリのみ
+      factory_postgres.go      postgres タグ: DB有無で切替
+      sqlc/                    sqlc 生成コード
+web/static/               フロントエンド
+docker-compose.yml
 ```
 
 依存方向: `cmd → adapter → usecase → port → domain`

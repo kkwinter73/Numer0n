@@ -79,8 +79,12 @@ func main() {
 	}
 
 	// ----- 4. ストレージ層 -----
-	// フェーズ2.4 まではメモリ実装を使う。DBが繋がっていても今は読み書きしない。
-	sessionStore := persistence.NewMemorySessionStore()
+	// CPU対戦: DBがあれば PostgresSessionStore、なければ MemorySessionStore
+	// (factory パッケージがビルドタグで実装を切り替える)
+	sessionStore := persistence.NewSessionRepository(db)
+	// オンライン対戦: フェーズ2.4 ではメモリ実装のまま。
+	// 理由: domain.Room の sync.Cond による long-poll 機構がプロセスローカル前提。
+	// フェーズ3 (WebSocket) + フェーズ4 (認証) で再設計予定。
 	roomStore := persistence.NewMemoryRoomStore()
 
 	// ----- 5. usecase 層 -----

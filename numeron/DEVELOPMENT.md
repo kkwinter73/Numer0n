@@ -71,12 +71,12 @@ cmd/server/main.go                エントリーポイント (依存組み立�
 - ✅ **1.6** slog 構造化ログ + リクエストID + ミドルウェア (RequestID/Logger/AccessLog/Recover)
 - ✅ **1.7** 統合テスト (httphandler 95.0%, 全体 121件パス)
 
-### フェーズ2: DB + 設定管理 + フロント基盤
+### フェーズ2: DB + 設定管理 + フロント基盤 ✅ 完了
 - ✅ **2.1** envconfig による設定管理 + Docker Compose (PostgreSQL + Redis) + ヘルスチェック
 - ✅ **2.2** sqlc + golang-migrate セットアップ + DB接続ヘルパー + DBHealthChecker
 - ✅ **2.3** スキーマ設計 (users, cpu_sessions, online_matches, rating_history)
-- ⬜ **2.4** リポジトリのDB実装 + testcontainers
-- ⬜ **2.5** React + Vite + TS の足場構築 (既存フロントはそのまま)
+- ✅ **2.4** CPU対戦のDB実装 + ビルドタグでの段階導入 + testcontainersテスト準備
+- ✅ **2.5** React + Vite + TS の足場構築 (既存フロントはそのまま)
 
 ### フェーズ3: WebSocket化 + 切断ハンドリング
 - ⬜ **3.1** WebSocket hub の設計と実装 (`coder/websocket`)
@@ -114,32 +114,40 @@ cmd/server/main.go                エントリーポイント (依存組み立�
 
 ## 🧭 現在地
 
-**フェーズ 2.3 完了**: 本番スキーマ設計と sqlc クエリ定義。
+**🎉 フェーズ 2 完了**: DB基盤・設定管理・フロントエンド足場が揃いました。
 
-### 2.3 で追加したもの
-- マイグレーション 4本 (users / cpu_sessions / online_matches / rating_history)
-- sqlc クエリ定義 30件 (db/queries/*.sql)
-- `db/SCHEMA.md`: ER図、テーブル責務、トランザクション境界、設計判断の記録
+### 2.5 で追加したもの
+- `web/app/` — Vite + React 18 + TypeScript の新規アプリ
+- 依存: `react-router-dom`, `@tanstack/react-query`, `zustand`
+- `src/api/`: ApiError クラス、構造化エラー対応、型付きAPIラッパー
+- `src/pages/HomePage.tsx`, `HealthPage.tsx`: 動作確認用画面
+- `src/store/auth.ts`: Zustand 認証ストアの足場(フェーズ4で本格使用)
+- Vite の `/api` `/ws` プロキシ設定 (8080 のGoサーバーに転送)
+- パスエイリアス `@/*` → `src/*` (TS + Vite 両方で設定)
+- TypeScript strict mode + 追加チェック (`noUnusedLocals` 等)
 
-### 採用した設計
-- **ID**: UUID v7 (時刻ソート可能、推測されない)
-- **パスワード**: argon2id (現代標準のハッシュ)
-- **暗証保存**: 平文 (3桁数字は暗号化に意味がないため)
-- **試合履歴**: 全ターン記録 (replay/分析可能)
-- **レーティング**: users 列に現在値、rating_history で履歴
-- **削除**: users はソフトデリート、対戦履歴は物理保持
-- **未ログインプレイ**: user_id NULL 許容
-- **rated戦**: 両者ログイン時のみ true (レーティングが動くのはこの試合のみ)
+### 動作確認済み
+- `npm install` (74 パッケージ)
+- `npm run build` (TypeScript型チェック+Viteビルド成功、206KB / gzip 66KB)
+- `npm run dev` (Vite 234ms 起動)
+- Playwright E2E: HomePage 表示 → HealthPage 遷移 → TanStack Query で `/api/health` 取得成功
 
-### 設計の妥協と注意点
-- pgx の副作用 import がコメントアウト状態 (環境制約)
-  → お手元で `go get` 後にコメント解除
-- sqlc generate を実行していないので `internal/adapter/persistence/sqlc/` は空
-  → お手元で `sqlc generate` 実行で Goコード生成
-- SQL構文は厳密検証していない (PostgreSQL を起動できない環境のため)
-  → お手元で `migrate up` 時にエラーが出たら修正
+### フェーズ2 全体のサマリ
+- 設定管理 + Docker Compose + ヘルスチェック
+- sqlc + golang-migrate のインフラ
+- 4テーブルのスキーマ設計 (30 SQLクエリ)
+- CPU対戦のDB実装 (ビルドタグで段階導入)
+- React 足場構築
 
-次のセッションでは **フェーズ 2.4** (リポジトリのDB実装) に進みます。
+### カバレッジ
+- config: 100%
+- domain: 99.4%
+- usecase: 91.1%
+- observability: 93.4%
+- httphandler: 98.6%
+- persistence: 5.6% (postgres タグ付きは手元実機テスト)
+
+次のセッションでは **フェーズ 3** (WebSocket 化 + 切断ハンドリング) に進みます。
 
 ---
 
@@ -286,6 +294,34 @@ ORM (GORM等) より型安全で、SQLそのものを書くため SQL力が付�
 - **非正規化**: `users.games_played` 等の統計列は集計クエリ高速化のため意図的に冗長保持
 - **JSONB の活用**: `cpu_sessions.cpu_candidates` は構造化された配列なのでJSONB で十分
 
+### ビルドタグによる段階導入 (フェーズ2.4で確立)
+- **2モードビルド**: デフォルト(メモリのみ、依存ゼロ) と `postgres` タグ(DB実装含む)
+- **factory パターン**: `persistence.NewSessionRepository(db)` が抽象的なポートを返し、
+  main.go はビルドタグを意識しない
+- **メリット**:
+  - 外部依存 (pgx, sqlcgen 等) を導入していない環境でもビルド可能
+  - 学習段階・本格運用の双方をサポート
+  - お手元で `sqlc generate` 等を実行するまでデフォルトモードで開発できる
+- **デメリット**:
+  - ファイル数が増える (factory.go × 2)
+  - IDE のシンボル解決でビルドタグを切り替える必要がある
+- **将来**: フェーズ4 で認証実装が本格化したら、依存を標準化してビルドタグを撤廃する可能性
+
+### フロントエンド設計 (フェーズ2.5で確立)
+- **既存とReact足場の並列稼働**: `web/static/index.html` は今まで通り Go から配信、
+  新規 React アプリは `web/app/` で独立開発。フェーズ6 で統合する
+- **Vite + React 18 + TypeScript strict**: 標準的なモダンスタック
+- **状態管理の役割分担**:
+  - サーバー状態 (API レスポンス、キャッシュ) → **TanStack Query**
+  - クライアント状態 (UI設定、ログイン中ユーザーキャッシュ) → **Zustand**
+  - これを混同しないことが重要 (Redux 等で両方やると複雑化する)
+- **開発時プロキシ**: Vite (5173) が `/api` `/ws` を Go (8080) に転送。CORS問題が出ない
+- **パスエイリアス**: `@/*` → `src/*`。tsconfig と vite.config の両方で設定が必要
+- **API クライアントの型**: 手動でサーバーの型を書き写す (TypeScript)。
+  将来 OpenAPI / tRPC で自動化する余地あり
+- **ApiError クラス**: 既存 index.html の実装と同等。`err.isInvalidInput()` 等で型安全な分岐
+- **依存最小化方針はフロントでも継続**: shadcn/ui や lucide-react は必要になってから
+
 ---
 
 ## 🚀 環境セットアップ
@@ -307,60 +343,58 @@ go run ./cmd/server
 
 ## 🔄 次セッションへの引き継ぎ
 
-### 次にやること: フェーズ2.4 (リポジトリのDB実装 + testcontainers)
+### 次にやること: フェーズ3 (WebSocket 化 + 切断ハンドリング)
 
-**目的**: メモリストア (`MemorySessionStore` / `MemoryRoomStore`) を **PostgreSQL 実装に差し替え**。
-これでメモリ揮発性のデータが永続化される。フェーズ1で確立した port インターフェース経由なので、上位層 (usecase / handler) は無変更で済むはず。
+**目的**: 現状のオンライン対戦は long-poll (`/api/online/poll` で最大25秒待機) で動いています。
+これを **WebSocket** に置き換え、双方向のリアルタイム通信を実現します。
+同時に切断検知・再接続・対戦放棄の判定を導入します。
 
-**2.4 で具体的にやる作業**:
+**3 で具体的にやる作業**:
 
-1. **port インターフェース拡張**:
-   - `SessionRepository` に `Get` がエラー戻り値しかない → DB I/O 失敗を表現できているか確認
-   - 必要に応じて context.Context を受け取るようシグネチャ変更
-     (DB操作にはcontext必須)
-2. **DB実装**:
-   - `internal/adapter/persistence/postgres_session_store.go`
-   - `internal/adapter/persistence/postgres_room_store.go`
-   - sqlc 生成コードを呼んでドメインモデルに詰め替える
-3. **ドメインモデル ⇔ DB行 のマッピング**:
-   - `domain.Session` ↔ sqlc の `CPUSession` 構造体
-   - `domain.Room` ↔ sqlc の `OnlineMatch` 構造体
-   - 注意: `domain.Room` の sync.Mutex / sync.Cond は **DBには保存しない**。
-     これらは「同一プロセス内の現在ルームの状態管理」に必要なので、
-     DB保存とは別問題 (フェーズ3 で WS hub に逃がす計画)
-4. **トランザクション**:
-   - `*sql.Tx` を usecase に渡す or リポジトリ内で使う設計
-   - レーティング更新は1トランザクション
-5. **testcontainers**:
-   - `internal/adapter/persistence/postgres_*_test.go`
-   - 各テストの先頭で PostgreSQL コンテナ起動
-   - マイグレーション適用 → クエリ実行 → 検証
-6. **段階的切替**:
-   - `DATABASE_URL` 空ならメモリ実装 (現状維持)
-   - 設定されていればDB実装を使う
+1. **WebSocket ライブラリ導入**:
+   - `coder/websocket` (旧 nhooyr/websocket、標準ライブラリに近い設計、推奨)
+   - `go get github.com/coder/websocket`
+
+2. **WS Hub の設計**:
+   - 新パッケージ `internal/adapter/wshub/` 等
+   - `domain.Room` から sync.Cond / WaitEvents を取り除き、hub に移動
+   - 各ルームごとに「接続中クライアントのリスト」を管理
+   - イベント発火時に該当ルームの全クライアントにブロードキャスト
+
+3. **新エンドポイント**:
+   - `GET /ws/online?code=XXX&token=YYY` で WebSocket 接続
+   - 既存の `/api/online/poll` は当面残す (フェーズ6 のフロント移行までは並列稼働)
+
+4. **WS メッセージ仕様**:
+   - サーバー → クライアント: イベント (opponent_joined, turn_resolved, game_over 等)
+   - クライアント → サーバー: アクション (secret 送信、guess 送信、ping)
+   - JSON、`{type: "...", data: {...}}` 形式
+
+5. **切断検知**:
+   - 30秒以上 ping が来ない → 切断扱い
+   - 切断後 60秒以内に再接続できれば継続
+   - 60秒経過 → 対戦放棄判定 (相手の勝利)
+
+6. **フロント側の WS クライアント**:
+   - `web/static/index.html` 内の poll ループを WebSocket に置き換える
+   - または React アプリで先に実装し、既存ページも徐々に統合
 
 **ポイント**:
-- フェーズ1.7 の handler 統合テストが通れば、リファクタリングは安全
-- `domain.Room` の sync 機構の扱いが微妙: DB に保存するのはステート(phase, turn等)だけで、
-  待機中の poll を起こす仕組みはプロセスローカル
-- メモリ実装は一旦残す: テスト時にDB起動するのは重いので、ユニットテストはメモリで継続
-- UUID 生成: `github.com/google/uuid` を導入。GoogleのライブラリでBSD-3でOK
-- お手元での実行が前提: `sqlc generate` 後でないとビルドできない
+- WebSocket は long-poll より複雑だが、リアルタイム性とサーバーリソース面で圧倒的に有利
+- 切断ハンドリングは「正常系のWS」より重要。テストでも切断シナリオを多めに
+- DB との関係: フェーズ4 で認証実装後、終了試合のみ online_matches に保存
 
 ### 開始時のコマンド
 
 ```bash
 cd numeron
-go get github.com/google/uuid
-sqlc generate
-docker compose up -d
-migrate -path db/migrations -database "$DATABASE_URL" up
-go test ./... -race
+go get github.com/coder/websocket
+go test ./...
 ```
 
 ### セッション継続のための合言葉
 
-「フェーズ2.4をやろう」で再開できます。
+「フェーズ3をやろう」で再開できます。
 
 ---
 
@@ -373,54 +407,70 @@ numeron/
 ├── MIGRATE_TO_CLAUDE_CODE.md         Claude Code 移行手順
 ├── README.md
 ├── go.mod
-├── docker-compose.yml                PostgreSQL + Redis (開発用)
-├── sqlc.yaml                         sqlc コード生成設定
+├── docker-compose.yml
+├── sqlc.yaml
 ├── .env.example
 ├── .gitignore
 ├── db/
-│   ├── SCHEMA.md                     ER図・テーブル責務・設計判断の記録
-│   ├── migrations/                   golang-migrate 用
-│   │   ├── 000001_create_users.{up,down}.sql
-│   │   ├── 000002_create_cpu_sessions.{up,down}.sql
-│   │   ├── 000003_create_online_matches.{up,down}.sql
-│   │   └── 000004_create_rating_history.{up,down}.sql
-│   └── queries/                      sqlc 用クエリ定義 (計30件)
-│       ├── users.sql
-│       ├── cpu_sessions.sql
-│       ├── online_matches.sql
-│       └── rating_history.sql
-├── cmd/
-│   └── server/main.go
+│   ├── SCHEMA.md
+│   ├── migrations/                   4本
+│   └── queries/                      30クエリ
+├── cmd/server/main.go
 ├── internal/
 │   ├── config/
 │   ├── domain/
 │   ├── usecase/
 │   ├── observability/
-│   ├── port/
+│   ├── port/repository.go
 │   └── adapter/
 │       ├── httphandler/
 │       └── persistence/
-│           ├── session_store.go       メモリ実装
-│           ├── room_store.go          メモリ実装
-│           ├── db.go                  DB接続ヘルパー
-│           ├── db_health.go           DBヘルスチェッカー
-│           ├── db_test.go
-│           └── sqlc/                  sqlc 生成コード (要 `sqlc generate`)
-│               └── README.md
-└── web/static/index.html
+│           ├── session_store.go            メモリ実装 (CPU)
+│           ├── room_store.go               メモリ実装 (オンライン)
+│           ├── db.go                       DB接続ヘルパー
+│           ├── db_health.go
+│           ├── postgres_session_store.go        (postgres タグ)
+│           ├── postgres_session_store_test.go   (postgres タグ)
+│           ├── factory.go                       デフォルト: メモリのみ
+│           ├── factory_postgres.go              postgres タグ
+│           └── sqlc/                            sqlc 生成コード (要 `sqlc generate`)
+└── web/
+    ├── static/index.html              既存ゲーム本体 (現役)
+    └── app/                           React + Vite + TS 足場 (フェーズ2.5)
+        ├── package.json
+        ├── vite.config.ts             /api と /ws を proxy
+        ├── tsconfig.json              strict mode
+        ├── index.html
+        └── src/
+            ├── main.tsx
+            ├── App.tsx
+            ├── styles.css
+            ├── api/
+            │   ├── client.ts          fetch ラッパー
+            │   ├── error.ts           ApiError クラス
+            │   ├── types.ts           サーバー API 型
+            │   └── numeron.ts         API ラッパー関数
+            ├── pages/
+            │   ├── HomePage.tsx
+            │   └── HealthPage.tsx
+            ├── components/
+            ├── hooks/
+            └── store/auth.ts          Zustand 認証ストア
 ```
 
 ---
 
 ## 🐛 既知の負債 (今後解消予定)
 
-- `domain/room.go` に sync 機構が同居 → フェーズ3で WS hub に移す
+- `domain/room.go` に sync 機構が同居 → フェーズ3で WS hub に移す (これがフェーズ3 のメイン作業)
 - `TurnLog` のフィールド名 `player_*`/`cpu_*` がオンライン対戦で不自然 → フロント書き換えと同時にリネーム検討
 - `usecase.SubmitSecret` / `SubmitGuess` で domain エラーを文字列で判定している → 後続で domain 層のエラー型化検討
-- persistence 層のDBテストが無い → フェーズ2.4 で testcontainers で書く
 - フロントは `console.log` を使っていない (将来 sentry等を入れる場合に検討)
 - メモリストア (RoomStore) のGCループに停止手段がない → context.Context 受け取りに変える
 - `db.go` の pgx import がコメントアウト状態 → お手元で `go get` 実行後に有効化
 - `sqlc generate` を実行していない → お手元で実行が必要
-- domain モデルと DB スキーマの**マッピング**がまだ無い → フェーズ2.4 で実装
-- UUID生成ライブラリの選定がまだ → フェーズ2.4 で `github.com/google/uuid` 等を導入
+- オンライン対戦の永続化 → フェーズ4 で認証と一緒に
+- `domain.Session.ID` (16桁hex) と DB UUID v7 のミスマッチを UUID v5 写像でブリッジ中 → 将来 domain側を UUIDにする可能性
+- testcontainers ベースのDB統合テストはお手元で実行が必要
+- API レスポンス型はフロントで手書き → 将来 OpenAPI/tRPC等で自動生成検討
+- React アプリのテストランナー未導入 → 必要になったら Vitest 導入検討

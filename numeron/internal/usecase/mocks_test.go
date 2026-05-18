@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -26,7 +27,7 @@ func newFakeSessionRepo() *fakeSessionRepo {
 
 var _ port.SessionRepository = (*fakeSessionRepo)(nil)
 
-func (f *fakeSessionRepo) Save(s *domain.Session) error {
+func (f *fakeSessionRepo) Save(_ context.Context, s *domain.Session) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.saveCalls++
@@ -37,7 +38,7 @@ func (f *fakeSessionRepo) Save(s *domain.Session) error {
 	return nil
 }
 
-func (f *fakeSessionRepo) Get(id string) (*domain.Session, bool, error) {
+func (f *fakeSessionRepo) Get(_ context.Context, id string) (*domain.Session, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.getCalls++
