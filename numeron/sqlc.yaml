@@ -1,0 +1,27 @@
+version: "2"
+
+# sqlc の生成設定
+# 使い方:
+#   sqlc generate
+#   → db/queries/*.sql から internal/adapter/persistence/sqlc/ に Go コードを生成
+#
+# 公式ドキュメント: https://docs.sqlc.dev/
+sql:
+  - engine: postgresql
+    queries: db/queries
+    schema: db/migrations
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/adapter/persistence/sqlc
+        # pgx/v5 を使用 (database/sql ではなく直接 pgx を使うことで型対応が広い)
+        # 必要なら sql_package: "database/sql" に変更可
+        sql_package: pgx/v5
+        # 生成コードの命名規則
+        emit_json_tags: false
+        emit_prepared_queries: false
+        emit_interface: true       # Querier インターフェースを生成 (テストでモック可能に)
+        emit_exact_table_names: false
+        emit_empty_slices: true    # nil ではなく [] を返す
+        # nullable カラムは sql.Null* ではなく pgtype.* を使う (pgx と相性が良い)
+        emit_pointers_for_null_types: false

@@ -73,8 +73,8 @@ cmd/server/main.go                エントリーポイント (依存組み立�
 
 ### フェーズ2: DB + 設定管理 + フロント基盤
 - ✅ **2.1** envconfig による設定管理 + Docker Compose (PostgreSQL + Redis) + ヘルスチェック
-- ⬜ **2.2** PostgreSQL + sqlc + golang-migrate
-- ⬜ **2.3** スキーマ設計 (`users`, `matches`, `match_logs`, `ranking_entries`)
+- ✅ **2.2** sqlc + golang-migrate セットアップ + DB接続ヘルパー + DBHealthChecker
+- ✅ **2.3** スキーマ設計 (users, cpu_sessions, online_matches, rating_history)
 - ⬜ **2.4** リポジトリのDB実装 + testcontainers
 - ⬜ **2.5** React + Vite + TS の足場構築 (既存フロントはそのまま)
 
@@ -114,24 +114,32 @@ cmd/server/main.go                エントリーポイント (依存組み立�
 
 ## 🧭 現在地
 
-**フェーズ 2.1 完了**: 設定管理 + ヘルスチェック + Docker Compose セットアップ。
+**フェーズ 2.3 完了**: 本番スキーマ設計と sqlc クエリ定義。
 
-### 2.1 で追加したもの
-- `internal/config/` パッケージ (環境変数 → Config構造体、検証付き)
-- `httphandler/health_handler.go` (`/api/health` エンドポイント、依存先チェック対応)
-- `docker-compose.yml` (PostgreSQL 16 + Redis 7)
-- `.env.example`, `.gitignore`
-- README にセットアップ手順
+### 2.3 で追加したもの
+- マイグレーション 4本 (users / cpu_sessions / online_matches / rating_history)
+- sqlc クエリ定義 30件 (db/queries/*.sql)
+- `db/SCHEMA.md`: ER図、テーブル責務、トランザクション境界、設計判断の記録
 
-### カバレッジ
-- config: 100%
-- domain: 99.4%
-- usecase: 91.1%
-- observability: 93.4%
-- httphandler: 95.5%
-- persistence: 0% (フェーズ2.2でDB導入と同時にtestcontainers)
+### 採用した設計
+- **ID**: UUID v7 (時刻ソート可能、推測されない)
+- **パスワード**: argon2id (現代標準のハッシュ)
+- **暗証保存**: 平文 (3桁数字は暗号化に意味がないため)
+- **試合履歴**: 全ターン記録 (replay/分析可能)
+- **レーティング**: users 列に現在値、rating_history で履歴
+- **削除**: users はソフトデリート、対戦履歴は物理保持
+- **未ログインプレイ**: user_id NULL 許容
+- **rated戦**: 両者ログイン時のみ true (レーティングが動くのはこの試合のみ)
 
-次のセッションでは **フェーズ 2.2** (sqlc + golang-migrate + 初回スキーマ) に進みます。
+### 設計の妥協と注意点
+- pgx の副作用 import がコメントアウト状態 (環境制約)
+  → お手元で `go get` 後にコメント解除
+- sqlc generate を実行していないので `internal/adapter/persistence/sqlc/` は空
+  → お手元で `sqlc generate` 実行で Goコード生成
+- SQL構文は厳密検証していない (PostgreSQL を起動できない環境のため)
+  → お手元で `migrate up` 時にエラーが出たら修正
+
+次のセッションでは **フェーズ 2.4** (リポジトリのDB実装) に進みます。
 
 ---
 
@@ -248,6 +256,36 @@ ORM (GORM等) より型安全で、SQLそのものを書くため SQL力が付�
   - ロードバランサ (k8s liveness probe等) で自動切り離しに使える
 - **失敗の詳細はレスポンスに含める**: `{name: "...", status: "fail", error: "..."}` で運用者が原因特定可能
 
+### DB アクセス設計 (フェーズ2.2で確立)
+- **sqlc + golang-migrate**: 「SQLは手書き、Goコードは自動生成」の方針
+  - ORM (GORM等) より型安全で、SQL力が付く
+  - 複雑なクエリで詰まない
+- **pgx/v5 をドライバに採用**: PostgreSQL 向けの高性能ドライバ、sqlcの推奨
+- **データベース層は段階的に有効化**: `DATABASE_URL` が空ならメモリ実装で起動
+  - フェーズ2.4まではメモリ実装が現役、DBはフェーズ2.4で差し替え
+  - これによりDBが使えない環境でも開発・テストできる
+- **起動時 Ping リトライ**: 5回・指数バックオフで Docker Compose 起動順の差を吸収
+- **接続プール**: `DB_MAX_OPEN_CONNS=25`, `IDLE=5` がデフォルト。本番では負荷に応じて調整
+- **マイグレーション**: 番号付きで管理 (`000001_xxx.up.sql`)。`up` と `down` を必ず両方書く
+- **生成コードはコミット**: `sqlc generate` の結果はリポジトリに含める (再現性のため)
+- **クエリは `db/queries/*.sql` に集約**: `-- name: GetXxx :one` のようなアノテーションでメソッド生成
+- **循環依存回避**: persistence パッケージが httphandler に直接依存しないよう、
+  `HealthChecker` インターフェースを構造的型付けで満たす形にする
+
+### スキーマ設計 (フェーズ2.3で確立)
+- **ID は UUID v7**: 推測されない + 時刻ソート可能。BIGSERIAL より広い適用範囲
+- **大小無視のUNIQUE**: `LOWER(username)` の関数インデックスで実現。
+  `Alice` と `alice` を同一視できる
+- **論理削除 (users のみ)**: `deleted_at IS NULL` の部分インデックスでアクティブユーザーを高速検索
+- **対戦履歴は物理削除しない**: 他ユーザーの履歴に紐づくため
+- **部分UNIQUEインデックス**: `code` のように「アクティブ中のみ一意」を表現
+  - `WHERE code IS NOT NULL` でNULL同士の衝突を回避、コードの再利用が可能
+- **CHECK制約で不変条件を表現**: 例えばEAT/BITE の `eat + bite <= 3` を DB レベルで保証
+- **トランザクション境界**: レーティング更新(users 2件 + rating_history 2件 + online_matches)は
+  1トランザクション。sqlc から直接書けないので usecase 層で `*sql.Tx` を渡す
+- **非正規化**: `users.games_played` 等の統計列は集計クエリ高速化のため意図的に冗長保持
+- **JSONB の活用**: `cpu_sessions.cpu_candidates` は構造化された配列なのでJSONB で十分
+
 ---
 
 ## 🚀 環境セットアップ
@@ -269,68 +307,60 @@ go run ./cmd/server
 
 ## 🔄 次セッションへの引き継ぎ
 
-### 次にやること: フェーズ2.2 (sqlc + golang-migrate セットアップ)
+### 次にやること: フェーズ2.4 (リポジトリのDB実装 + testcontainers)
 
-**目的**: 型安全なDBアクセスのインフラを整え、初回のテーブル (例: `cpu_sessions`) を作って動作確認します。
-このセッションでは「DB接続して読み書きできる」までを目指し、既存のメモリ実装の置き換えは **2.4** に回します。
+**目的**: メモリストア (`MemorySessionStore` / `MemoryRoomStore`) を **PostgreSQL 実装に差し替え**。
+これでメモリ揮発性のデータが永続化される。フェーズ1で確立した port インターフェース経由なので、上位層 (usecase / handler) は無変更で済むはず。
 
-**2.2 で具体的にやる作業**:
+**2.4 で具体的にやる作業**:
 
-1. **PostgreSQL ドライバ追加**:
-   ```bash
-   go get github.com/jackc/pgx/v5/stdlib  # database/sql 互換ドライバ
-   ```
-
-2. **golang-migrate**: マイグレーション管理
-   - インストール: `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
-   - `db/migrations/` ディレクトリ作成
-   - 初回マイグレーション: `000001_init.up.sql` / `000001_init.down.sql`
-
-3. **sqlc**: SQLから型安全なGoコード生成
-   - インストール: `brew install sqlc` または `go install`
-   - `sqlc.yaml` 作成 (生成設定)
-   - `db/queries/*.sql` にクエリを書く
-   - `sqlc generate` で `internal/adapter/persistence/sqlc/` に Go コードが生成される
-
-4. **DB接続ヘルパー**: `internal/adapter/persistence/db.go`
-   - `*sql.DB` 作成 + 接続プール設定
-   - 接続失敗時のリトライ (固定回数で)
-
-5. **DBHealthChecker**: `httphandler` から `db.Ping()` できる
-   - フェーズ2.1 で作った `HealthChecker` インターフェースの実装
-   - `main.go` で `NewHealthHandler(NewDBHealthChecker(db))` に変更
-
-6. **テスト**: testcontainers-go で PostgreSQL を起動
-   - `internal/adapter/persistence/db_test.go`
-   - CI でも動かせる
+1. **port インターフェース拡張**:
+   - `SessionRepository` に `Get` がエラー戻り値しかない → DB I/O 失敗を表現できているか確認
+   - 必要に応じて context.Context を受け取るようシグネチャ変更
+     (DB操作にはcontext必須)
+2. **DB実装**:
+   - `internal/adapter/persistence/postgres_session_store.go`
+   - `internal/adapter/persistence/postgres_room_store.go`
+   - sqlc 生成コードを呼んでドメインモデルに詰め替える
+3. **ドメインモデル ⇔ DB行 のマッピング**:
+   - `domain.Session` ↔ sqlc の `CPUSession` 構造体
+   - `domain.Room` ↔ sqlc の `OnlineMatch` 構造体
+   - 注意: `domain.Room` の sync.Mutex / sync.Cond は **DBには保存しない**。
+     これらは「同一プロセス内の現在ルームの状態管理」に必要なので、
+     DB保存とは別問題 (フェーズ3 で WS hub に逃がす計画)
+4. **トランザクション**:
+   - `*sql.Tx` を usecase に渡す or リポジトリ内で使う設計
+   - レーティング更新は1トランザクション
+5. **testcontainers**:
+   - `internal/adapter/persistence/postgres_*_test.go`
+   - 各テストの先頭で PostgreSQL コンテナ起動
+   - マイグレーション適用 → クエリ実行 → 検証
+6. **段階的切替**:
+   - `DATABASE_URL` 空ならメモリ実装 (現状維持)
+   - 設定されていればDB実装を使う
 
 **ポイント**:
-- 最初の sqlc クエリは `SELECT 1` 等の簡単なものから
-- マイグレーションは1方向 (`up`) と巻き戻し (`down`) を必ずセットで書く
-- パスワード等は環境変数 (`DATABASE_URL`) で渡す
-- 接続文字列は本番では SSL 必須 (`sslmode=require`)、開発は `sslmode=disable` でOK
+- フェーズ1.7 の handler 統合テストが通れば、リファクタリングは安全
+- `domain.Room` の sync 機構の扱いが微妙: DB に保存するのはステート(phase, turn等)だけで、
+  待機中の poll を起こす仕組みはプロセスローカル
+- メモリ実装は一旦残す: テスト時にDB起動するのは重いので、ユニットテストはメモリで継続
+- UUID 生成: `github.com/google/uuid` を導入。GoogleのライブラリでBSD-3でOK
+- お手元での実行が前提: `sqlc generate` 後でないとビルドできない
 
 ### 開始時のコマンド
 
 ```bash
 cd numeron
-# (まだdockerが入っていなければ Docker Desktop インストール)
+go get github.com/google/uuid
+sqlc generate
 docker compose up -d
-docker compose ps   # 両サービスがhealthyになるまで30秒程度
-
-# 既存テストが全パスすることを確認
-go test ./...
+migrate -path db/migrations -database "$DATABASE_URL" up
+go test ./... -race
 ```
 
 ### セッション継続のための合言葉
 
-「フェーズ2.2をやろう」で再開できます。
-
-### 注意点
-
-- このフェーズから **Docker が必要** になります
-- 統合テストが testcontainers を使うので、Docker daemon が動いている必要あり
-- CI/CD で実行するなら GitHub Actions 等で services として PostgreSQL を上げる方法もある
+「フェーズ2.4をやろう」で再開できます。
 
 ---
 
@@ -338,53 +368,46 @@ go test ./...
 
 ```
 numeron/
-├── DEVELOPMENT.md              ← このファイル
+├── DEVELOPMENT.md                    ← このファイル
+├── CLAUDE.md                         Claude Code 用指示書
+├── MIGRATE_TO_CLAUDE_CODE.md         Claude Code 移行手順
 ├── README.md
 ├── go.mod
-├── docker-compose.yml          PostgreSQL + Redis (開発用)
+├── docker-compose.yml                PostgreSQL + Redis (開発用)
+├── sqlc.yaml                         sqlc コード生成設定
 ├── .env.example
 ├── .gitignore
+├── db/
+│   ├── SCHEMA.md                     ER図・テーブル責務・設計判断の記録
+│   ├── migrations/                   golang-migrate 用
+│   │   ├── 000001_create_users.{up,down}.sql
+│   │   ├── 000002_create_cpu_sessions.{up,down}.sql
+│   │   ├── 000003_create_online_matches.{up,down}.sql
+│   │   └── 000004_create_rating_history.{up,down}.sql
+│   └── queries/                      sqlc 用クエリ定義 (計30件)
+│       ├── users.sql
+│       ├── cpu_sessions.sql
+│       ├── online_matches.sql
+│       └── rating_history.sql
 ├── cmd/
-│   └── server/
-│       └── main.go             エントリーポイント (依存組み立て + ミドルウェアチェーン)
+│   └── server/main.go
 ├── internal/
-│   ├── config/                 環境変数 → Config 構造体
-│   │   ├── config.go
-│   │   └── config_test.go
-│   ├── domain/                 ドメインモデル (依存なし)
-│   │   ├── numeron.go          + numeron_test.go
-│   │   ├── turnlog.go
-│   │   ├── session.go          + session_test.go
-│   │   ├── cpu.go              + cpu_test.go
-│   │   └── room.go             + room_test.go
-│   ├── usecase/                アプリケーションフロー
-│   │   ├── errors.go           業務エラー定義
-│   │   ├── cpu_usecase.go      + cpu_usecase_test.go
-│   │   ├── online_usecase.go   + online_usecase_test.go
-│   │   └── mocks_test.go       テスト用モック
-│   ├── observability/          ロガー + ミドルウェア
-│   │   ├── logger.go           + logger_test.go
-│   │   └── middleware.go       + middleware_test.go
-│   ├── port/                   インターフェース定義
-│   │   └── repository.go       SessionRepository, RoomRepository
+│   ├── config/
+│   ├── domain/
+│   ├── usecase/
+│   ├── observability/
+│   ├── port/
 │   └── adapter/
-│       ├── httphandler/        HTTPハンドラ (薄い)
-│       │   ├── common.go       JSON書き出し + 汎用エラーヘルパー
-│       │   ├── api_error.go    APIError型 + コード定数 + usecase→HTTPマッピング + ログ
-│       │   ├── api_error_test.go
-│       │   ├── health_handler.go  ヘルスチェック (依存先チェッカーインターフェース付き)
-│       │   ├── health_handler_test.go
-│       │   ├── cpu_handler.go
-│       │   ├── cpu_integration_test.go
-│       │   ├── online_handler.go
-│       │   ├── online_integration_test.go
-│       │   └── integration_helpers_test.go
-│       └── persistence/        ストレージ実装 (現メモリ、将来DB)
-│           ├── session_store.go
-│           └── room_store.go
-└── web/
-    └── static/
-        └── index.html          フロントエンド (ApiError対応済み)
+│       ├── httphandler/
+│       └── persistence/
+│           ├── session_store.go       メモリ実装
+│           ├── room_store.go          メモリ実装
+│           ├── db.go                  DB接続ヘルパー
+│           ├── db_health.go           DBヘルスチェッカー
+│           ├── db_test.go
+│           └── sqlc/                  sqlc 生成コード (要 `sqlc generate`)
+│               └── README.md
+└── web/static/index.html
 ```
 
 ---
@@ -394,7 +417,10 @@ numeron/
 - `domain/room.go` に sync 機構が同居 → フェーズ3で WS hub に移す
 - `TurnLog` のフィールド名 `player_*`/`cpu_*` がオンライン対戦で不自然 → フロント書き換えと同時にリネーム検討
 - `usecase.SubmitSecret` / `SubmitGuess` で domain エラーを文字列で判定している → 後続で domain 層のエラー型化検討
-- persistence 層にテストが無い → フェーズ2.4 で DB 実装と同時に testcontainers で書く
+- persistence 層のDBテストが無い → フェーズ2.4 で testcontainers で書く
 - フロントは `console.log` を使っていない (将来 sentry等を入れる場合に検討)
 - メモリストア (RoomStore) のGCループに停止手段がない → context.Context 受け取りに変える
-- `/api/health` がまだ依存先チェッカーを持たない (空) → フェーズ2.2 で `DBHealthChecker` 追加
+- `db.go` の pgx import がコメントアウト状態 → お手元で `go get` 実行後に有効化
+- `sqlc generate` を実行していない → お手元で実行が必要
+- domain モデルと DB スキーマの**マッピング**がまだ無い → フェーズ2.4 で実装
+- UUID生成ライブラリの選定がまだ → フェーズ2.4 で `github.com/google/uuid` 等を導入

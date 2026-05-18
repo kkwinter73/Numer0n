@@ -8,7 +8,7 @@
 //	    │
 //	    ├─ internal/adapter/   外界とのIO層 (HTTP, DB)
 //	    │   ├─ httphandler/    HTTPプロトコル変換
-//	    │   └─ persistence/    ストレージ実装 (現在はメモリ、将来DB)
+//	    │   └─ persistence/    ストレージ実装 (メモリ + DB接続)
 //	    │
 //	    ├─ internal/usecase/   アプリケーション固有のビジネスフロー
 //	    │
@@ -19,13 +19,15 @@
 //	    └─ internal/domain/    ドメインモデル (依存なし)
 //
 // 依存方向: cmd → adapter → usecase → port → domain
-// observability/config はどの層からでも利用可
 package main
 
 import (
+	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/numeron/numeron/internal/adapter/httphandler"
 	"github.com/numeron/numeron/internal/adapter/persistence"
@@ -38,7 +40,6 @@ func main() {
 	// ----- 1. Config 読み込み -----
 	cfg, err := config.Load()
 	if err != nil {
-		// この段階ではロガーが無いので標準 log で
 		os.Stderr.WriteString("config error: " + err.Error() + "\n")
 		os.Exit(1)
 	}
@@ -51,22 +52,47 @@ func main() {
 	})
 	slog.SetDefault(logger)
 
-	// ----- 3. ストレージ層 -----
+	// ----- 3. (オプション) DB接続 -----
+	// DATABASE_URL が設定されていれば接続を試みる。
+	// 空の場合はメモリストアのみで動作 (フェーズ2.2 までの後方互換)。
+	var db *sql.DB
+	var healthCheckers []httphandler.HealthChecker
+	if cfg.DatabaseURL != "" {
+		logger.Info("connecting to database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		db, err = persistence.OpenDB(ctx, persistence.DBConfig{
+			URL:             cfg.DatabaseURL,
+			MaxOpenConns:    cfg.DBMaxOpenConns,
+			MaxIdleConns:    cfg.DBMaxIdleConns,
+			ConnMaxLifetime: time.Duration(cfg.DBConnMaxLifetime) * time.Second,
+		})
+		cancel()
+		if err != nil {
+			logger.Error("database connection failed", slog.Any("error", err))
+			os.Exit(1)
+		}
+		defer db.Close()
+		logger.Info("database connected")
+		healthCheckers = append(healthCheckers, persistence.NewDBHealthChecker(db))
+	} else {
+		logger.Info("database URL not set, running in memory-only mode")
+	}
+
+	// ----- 4. ストレージ層 -----
+	// フェーズ2.4 まではメモリ実装を使う。DBが繋がっていても今は読み書きしない。
 	sessionStore := persistence.NewMemorySessionStore()
 	roomStore := persistence.NewMemoryRoomStore()
 
-	// ----- 4. usecase 層 -----
+	// ----- 5. usecase 層 -----
 	cpuUC := usecase.NewCPUUsecase(sessionStore)
 	onlineUC := usecase.NewOnlineUsecase(roomStore)
 
-	// ----- 5. ハンドラ層 -----
+	// ----- 6. ハンドラ層 -----
 	cpuHandler := httphandler.NewCPUHandler(cpuUC)
 	onlineHandler := httphandler.NewOnlineHandler(onlineUC)
-	// ヘルスチェック: 現状は依存先がメモリのみなのでチェッカーなし
-	// フェーズ2.2 でDB追加時に DBHealthChecker を渡す
-	healthHandler := httphandler.NewHealthHandler()
+	healthHandler := httphandler.NewHealthHandler(healthCheckers...)
 
-	// ----- 6. ルーティング -----
+	// ----- 7. ルーティング -----
 	mux := http.NewServeMux()
 
 	// 静的ファイル
@@ -87,7 +113,7 @@ func main() {
 	mux.HandleFunc("/api/online/guess", onlineHandler.HandleGuess)
 	mux.HandleFunc("/api/online/poll", onlineHandler.HandlePoll)
 
-	// ----- 7. ミドルウェアチェーン -----
+	// ----- 8. ミドルウェアチェーン -----
 	rootHandler := observability.Chain(
 		observability.RecoverMiddleware(),
 		observability.RequestIDMiddleware(),
@@ -95,12 +121,13 @@ func main() {
 		observability.AccessLogMiddleware(),
 	)(mux)
 
-	// ----- 8. サーバー起動 -----
+	// ----- 9. サーバー起動 -----
 	logger.Info("server starting",
 		slog.String("addr", cfg.ListenAddr()),
 		slog.String("environment", cfg.Environment),
 		slog.String("log_format", cfg.LogFormat),
 		slog.String("log_level", cfg.LogLevel),
+		slog.Bool("db_connected", db != nil),
 	)
 
 	if err := http.ListenAndServe(cfg.ListenAddr(), rootHandler); err != nil {
