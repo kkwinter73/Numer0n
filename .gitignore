@@ -1,0 +1,33 @@
+# 環境変数 (機密情報)
+.env
+.envrc
+.env.local
+.env.*.local
+
+# Goビルド成果物
+numeron/numeron
+numeron/server
+*.test
+*.out
+
+# Node.js / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# coverage
+coverage.html
+coverage.out
+
+# Docker volumes
+data/
